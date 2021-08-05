@@ -9,7 +9,8 @@ import xgboost
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-from bugbug import feature_cleanup, github, issue_features, utils
+from bugbug import feature_cleanup, issue_features, utils
+from bugbug.github import Github
 from bugbug.model import IssueModel
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,10 @@ class NeedsDiagnosisModel(IssueModel):
     def __init__(self, lemmatization=False):
         IssueModel.__init__(self, lemmatization)
 
+        self.github = Github(owner="webcompat", repo="web-bugs")
+
         self.calculate_importance = False
+        self.training_dbs = [self.github.db_path]
 
         feature_extractors = []
 
@@ -56,10 +60,18 @@ class NeedsDiagnosisModel(IssueModel):
         self.clf = xgboost.XGBClassifier(n_jobs=utils.get_physical_cpu_count())
         self.clf.set_params(predictor="cpu_predictor")
 
+    def items_gen(self, classes):
+        for issue in self.github.get_issues():
+            issue_number = issue["number"]
+            if issue_number not in classes:
+                continue
+
+            yield issue, classes[issue_number]
+
     def get_labels(self):
         classes = {}
 
-        for issue in github.get_issues():
+        for issue in self.github.get_issues():
             # Skip issues that are not moderated yet as they don't have a meaningful title or body
             if issue["title"] == "In the moderation queue.":
                 continue

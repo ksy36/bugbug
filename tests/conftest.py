@@ -21,7 +21,7 @@ def mock_data(tmp_path):
     DBs = [
         os.path.basename(bugzilla.BUGS_DB),
         os.path.basename(repository.COMMITS_DB),
-        os.path.basename(github.GITHUB_ISSUES_DB),
+        os.path.basename(github.DATABASES["web-bugs"]),
     ]
 
     for f in DBs:
