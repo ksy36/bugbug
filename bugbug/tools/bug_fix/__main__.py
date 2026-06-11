@@ -94,6 +94,15 @@ def parse_args() -> argparse.Namespace:
         help="Firefox binary for the devtools MCP to drive. Implies "
         "--webcompat-tools. Auto-detected if omitted.",
     )
+    p.add_argument(
+        "--chrome-mask-profile",
+        type=Path,
+        default=None,
+        help="A pre-built Firefox profile with the Chrome Mask extension "
+        "installed (see scripts/setup_chrome_mask_profile.py). Used as a "
+        "template so the agent can enable UA-spoofing per site. Implies "
+        "--webcompat-tools.",
+    )
 
     p.add_argument(
         "--dry-run",
@@ -136,7 +145,7 @@ def parse_args() -> argparse.Namespace:
 
     args = p.parse_args()
 
-    if args.firefox_path is not None:
+    if args.firefox_path is not None or args.chrome_mask_profile is not None:
         args.webcompat_tools = True
 
     if not args.api_key:
@@ -172,6 +181,7 @@ async def run(args: argparse.Namespace) -> int:
         effort=args.effort,
         webcompat_tools=args.webcompat_tools,
         firefox_path=args.firefox_path,
+        chrome_mask_profile=args.chrome_mask_profile,
         verbose=args.verbose,
         log=args.log,
     )

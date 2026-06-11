@@ -22,6 +22,7 @@ def build_devtools_server(
     *,
     headless: bool = True,
     enable_script: bool = True,
+    profile_path: Path | None = None,
 ) -> McpStdioServerConfig:
     """Build the stdio config for the Firefox DevTools MCP server.
 
@@ -34,6 +35,10 @@ def build_devtools_server(
             arbitrary JS in the page context. Needed to read JS-only state
             such as ``navigator.userAgent`` during web-compat triage. The
             privileged-context tools are intentionally left disabled.
+        profile_path: A pre-built Firefox profile to use as a template (e.g.
+            one with the Chrome Mask extension installed). geckodriver copies
+            it into a fresh per-session profile, so the template is not
+            mutated. When ``None`` the server uses a clean throwaway profile.
     """
     args = [_PACKAGE]
     if headless:
@@ -42,5 +47,7 @@ def build_devtools_server(
         args.append("--enable-script")
     if firefox_path is not None:
         args += ["--firefox-path", str(firefox_path)]
+    if profile_path is not None:
+        args += ["--profile-path", str(profile_path)]
 
     return McpStdioServerConfig(command="npx", args=args)

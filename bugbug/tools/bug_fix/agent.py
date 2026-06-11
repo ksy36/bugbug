@@ -236,6 +236,7 @@ class BugFixTool(GenerativeModelTool):
         effort: str | None = None,
         webcompat_tools: bool = False,
         firefox_path: Path | None = None,
+        chrome_mask_profile: Path | None = None,
         verbose: bool = False,
         log: Path | None = None,
     ) -> BugFixResult:
@@ -255,8 +256,15 @@ class BugFixTool(GenerativeModelTool):
             # --- Firefox DevTools MCP (stdio; web-compat reproduction) ---- #
             # Drives a live Firefox via npx; needs none of the build/crash
             # tooling, so firefox_mcp is intentionally NOT imported here.
-            mcp_servers["firefox-devtools"] = build_devtools_server(firefox_path)
+            mcp_servers["firefox-devtools"] = build_devtools_server(
+                firefox_path, profile_path=chrome_mask_profile
+            )
             print("[bug_fix] web-compat tools enabled", file=sys.stderr)
+            if chrome_mask_profile:
+                print(
+                    f"[bug_fix] using Chrome Mask profile: {chrome_mask_profile}",
+                    file=sys.stderr,
+                )
         else:
             # --- Firefox build/eval MCP server (in-process; no tokens) ---- #
             # Imported lazily: pulls in grizzly/prefpicker, which carry heavy
