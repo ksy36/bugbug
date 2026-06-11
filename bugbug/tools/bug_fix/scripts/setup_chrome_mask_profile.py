@@ -39,6 +39,15 @@ from pathlib import Path
 # never pin a stale version.
 _AMO_API = "https://addons.mozilla.org/api/v5/addons/addon/chrome-mask/"
 
+# The devtools MCP, given --profile-path <parent>, does NOT use <parent>
+# directly: it resolves to <parent>/firefox_devtools_mcp_profile/ and reuses it
+# untouched if it already exists (see firefox-devtools-mcp src/firefox/profile.ts,
+# resolveProfilePath). So we build the profile *inside* that subdir and hand the
+# parent to --chrome-mask-profile. We keep the parent itself free of Firefox
+# profile files (prefs.js / places.sqlite / cert9.db / key4.db) so the MCP does
+# not emit its "looks like a real profile" warning.
+_MCP_PROFILE_DIR_NAME = "firefox_devtools_mcp_profile"
+
 
 def resolve_xpi_url() -> tuple[str, str]:
     """Return (download_url, version) for the latest signed Chrome Mask xpi."""
@@ -123,7 +132,9 @@ def main() -> int:
         "--profile-dir",
         type=Path,
         required=True,
-        help="Where to create the profile (reused via --chrome-mask-profile).",
+        help="Parent holder dir to pass to --chrome-mask-profile. The profile "
+        f"itself is built inside <profile-dir>/{_MCP_PROFILE_DIR_NAME}/ so the "
+        "devtools MCP reuses it directly.",
     )
     p.add_argument(
         "--profile-name",
@@ -148,12 +159,16 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    if args.profile_dir.exists():
+    parent = args.profile_dir
+    profile_dir = parent / _MCP_PROFILE_DIR_NAME
+
+    if profile_dir.exists():
         if not args.force:
             raise SystemExit(
-                f"profile-dir {args.profile_dir} exists; pass --force to recreate."
+                f"profile already exists at {profile_dir}; pass --force to recreate."
             )
-        shutil.rmtree(args.profile_dir)
+        shutil.rmtree(profile_dir)
+    parent.mkdir(parents=True, exist_ok=True)
 
     if args.xpi:
         xpi = args.xpi
@@ -163,17 +178,18 @@ def main() -> int:
     else:
         url, version = resolve_xpi_url()
         print(f"[setup] downloading Chrome Mask {version} from AMO", file=sys.stderr)
-        xpi = args.profile_dir.parent / "chrome-mask.xpi"
-        xpi.parent.mkdir(parents=True, exist_ok=True)
+        # Stage the xpi outside the parent holder so it isn't mistaken for a
+        # profile file; clean it up afterwards.
+        xpi = parent / ".chrome-mask-download.xpi"
         download(url, xpi)
         cleanup_xpi = True
 
     ext_id = extract_extension_id(xpi)
     print(f"[setup] extension ID: {ext_id}", file=sys.stderr)
 
-    print(f"[setup] creating profile at {args.profile_dir}", file=sys.stderr)
-    create_profile(args.firefox, args.profile_name, args.profile_dir)
-    install_xpi(args.profile_dir, xpi, ext_id)
+    print(f"[setup] creating profile at {profile_dir}", file=sys.stderr)
+    create_profile(args.firefox, args.profile_name, profile_dir)
+    install_xpi(profile_dir, xpi, ext_id)
 
     print("[setup] warm-launching Firefox to register the extension", file=sys.stderr)
     warm_launch(args.firefox, args.profile_name)
@@ -182,10 +198,10 @@ def main() -> int:
     if cleanup_xpi:
         xpi.unlink(missing_ok=True)
 
-    if verify_registered(args.profile_dir, ext_id):
-        print(f"[setup] success — Chrome Mask registered in {args.profile_dir}")
-        print("[setup] pass it to a run with:")
-        print(f"          --chrome-mask-profile {args.profile_dir}")
+    if verify_registered(profile_dir, ext_id):
+        print(f"[setup] success — Chrome Mask registered in {profile_dir}")
+        print("[setup] pass the PARENT dir to a run with:")
+        print(f"          --chrome-mask-profile {parent}")
         return 0
 
     print(
