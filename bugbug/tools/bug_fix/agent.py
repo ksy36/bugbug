@@ -37,8 +37,10 @@ from bugbug.tools.bug_fix.config import (
     SOURCE_WRITE_TOOLS,
 )
 from bugbug.tools.bug_fix.devtools_mcp import build_devtools_server
-from bugbug.tools.bug_fix.firefox_mcp import FirefoxContext
-from bugbug.tools.bug_fix.firefox_mcp import build_server as build_firefox_server
+
+# NOTE: firefox_mcp (and its grizzly/prefpicker crash-reproduction stack) is
+# imported lazily inside run(), only when web-compat mode is OFF. This keeps
+# web-compat runs free of the heavy native build/fuzzing dependencies.
 
 HERE = Path(__file__).resolve().parent
 
@@ -97,8 +99,7 @@ def make_investigator(*, webcompat_tools: bool = False) -> AgentDefinition:
             "Glob",
             "Bash",
             *BUGZILLA_READ_TOOLS,
-            *FIREFOX_TOOLS,
-            *(DEVTOOLS_TOOLS if webcompat_tools else []),
+            *(DEVTOOLS_TOOLS if webcompat_tools else FIREFOX_TOOLS),
         ],
         model="inherit",
     )
@@ -248,17 +249,25 @@ class BugFixTool(GenerativeModelTool):
         selected = sorted(bugs, reverse=newest_first)
         print(f"[bug_fix] triaging {len(selected)} bug(s): {selected}", file=sys.stderr)
 
-        # --- Firefox build/eval MCP server (in-process; no tokens) -------- #
-        fx_ctx = FirefoxContext.from_source_repo(source_repo)
-        firefox_server = build_firefox_server(fx_ctx)
+        mcp_servers = {"bugzilla": bugzilla_mcp_server}
 
-        # --- Firefox DevTools MCP (stdio; web-compat reproduction) -------- #
-        # Off by default. When enabled the agent can drive a live Firefox to
-        # reproduce web-compat bugs. Launched as a child process via npx.
-        mcp_servers = {"bugzilla": bugzilla_mcp_server, "firefox": firefox_server}
         if webcompat_tools:
+            # --- Firefox DevTools MCP (stdio; web-compat reproduction) ---- #
+            # Drives a live Firefox via npx; needs none of the build/crash
+            # tooling, so firefox_mcp is intentionally NOT imported here.
             mcp_servers["firefox-devtools"] = build_devtools_server(firefox_path)
             print("[bug_fix] web-compat tools enabled", file=sys.stderr)
+        else:
+            # --- Firefox build/eval MCP server (in-process; no tokens) ---- #
+            # Imported lazily: pulls in grizzly/prefpicker, which carry heavy
+            # native deps we don't want on the web-compat path.
+            from bugbug.tools.bug_fix.firefox_mcp import (
+                FirefoxContext,
+                build_server as build_firefox_server,
+            )
+
+            fx_ctx = FirefoxContext.from_source_repo(source_repo)
+            mcp_servers["firefox"] = build_firefox_server(fx_ctx)
 
         # --- Build agent options ------------------------------------------ #
         system_prompt = load_system_prompt(
@@ -281,8 +290,9 @@ class BugFixTool(GenerativeModelTool):
                 *SOURCE_WRITE_TOOLS,
                 *BUGZILLA_READ_TOOLS,
                 *BUGZILLA_WRITE_TOOLS,
-                *FIREFOX_TOOLS,
-                *(DEVTOOLS_TOOLS if webcompat_tools else []),
+                # Firefox build/crash tools only exist off the web-compat path;
+                # the devtools browser tools only exist on it.
+                *(DEVTOOLS_TOOLS if webcompat_tools else FIREFOX_TOOLS),
             ],
             model=model,
             max_turns=max_turns,

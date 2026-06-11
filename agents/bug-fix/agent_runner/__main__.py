@@ -19,6 +19,10 @@ class AgentInputs(BaseSettings):
     model: str | None = None
     max_turns: int | None = None
     effort: str | None = None
+    # Web-compat reproduction: drive a live Firefox via the firefox-devtools
+    # MCP instead of building/crashing Firefox from source. Off by default.
+    webcompat_tools: bool = False
+    firefox_path: Path | None = None
 
     model_config = SettingsConfigDict(extra="ignore")
 
@@ -78,13 +82,27 @@ async def main(ctx: Context) -> AgentResult:
     from bugbug.tools.bug_fix.agent import BugFixTool
 
     inputs = AgentInputs()
-    ensure_firefox_source(inputs.source_repo)
+
+    if inputs.webcompat_tools:
+        inputs.source_repo.mkdir(parents=True, exist_ok=True)
+        task = (
+            "This is a web-compatibility bug, not a crash. Use the "
+            "firefox-devtools MCP tools to reproduce the described behavior on "
+            "the live site (do NOT build Firefox, do NOT use attached "
+            "testcases). Save viewport screenshots with saveTo and view them "
+            "with Read. Report whether the bug reproduced, did not reproduce, "
+            "or is inconclusive, with the concrete evidence you observed. Only "
+            "comment on Bugzilla if you actually reproduced the issue."
+        )
+    else:
+        ensure_firefox_source(inputs.source_repo)
+        task = "Triage and fix the bug, and verify the fix"
 
     log_path = Path(tempfile.mkdtemp(prefix="bug-fix-log-")) / "agent.log"
 
     tool = BugFixTool.create()
     result = await tool.run(
-        task="Triage and fix the bug, and verify the fix",
+        task=task,
         bugzilla_mcp_server={
             "type": "http",
             "url": inputs.bugzilla_mcp_url,
@@ -94,6 +112,8 @@ async def main(ctx: Context) -> AgentResult:
         model=inputs.model,
         max_turns=inputs.max_turns,
         effort=inputs.effort,
+        webcompat_tools=inputs.webcompat_tools,
+        firefox_path=inputs.firefox_path,
         log=log_path,
         verbose=True,
     )
