@@ -32,9 +32,11 @@ from bugbug.tools.base import GenerativeModelTool
 from bugbug.tools.bug_fix.config import (
     BUGZILLA_READ_TOOLS,
     BUGZILLA_WRITE_TOOLS,
+    DEVTOOLS_TOOLS,
     FIREFOX_TOOLS,
     SOURCE_WRITE_TOOLS,
 )
+from bugbug.tools.bug_fix.devtools_mcp import build_devtools_server
 from bugbug.tools.bug_fix.firefox_mcp import FirefoxContext
 from bugbug.tools.bug_fix.firefox_mcp import build_server as build_firefox_server
 
@@ -57,16 +59,24 @@ class BugFixResult:
 # --------------------------------------------------------------------------- #
 
 
-def load_system_prompt(rules_dir: Path, extra: str) -> str:
-    tmpl = (HERE / "prompts" / "system.md").read_text()
+def load_system_prompt(
+    rules_dir: Path, extra: str, *, webcompat_tools: bool = False
+) -> str:
+    # Web-compat reproduction uses a dedicated, self-contained prompt instead of
+    # the triage/fix prompt — it has no notion of building Firefox, writing
+    # patches, or applying triage rules.
+    if webcompat_tools:
+        tmpl = (HERE / "prompts" / "webcompat.md").read_text()
+        return tmpl.format(extra_instructions=extra or "(none)")
 
+    tmpl = (HERE / "prompts" / "system.md").read_text()
     return tmpl.format(
         rules_dir=str(rules_dir.resolve()),
         extra_instructions=extra or "(none)",
     )
 
 
-def make_investigator() -> AgentDefinition:
+def make_investigator(*, webcompat_tools: bool = False) -> AgentDefinition:
     """Create a single generic investigator subagent definition."""
     return AgentDefinition(
         description=(
@@ -88,6 +98,7 @@ def make_investigator() -> AgentDefinition:
             "Bash",
             *BUGZILLA_READ_TOOLS,
             *FIREFOX_TOOLS,
+            *(DEVTOOLS_TOOLS if webcompat_tools else []),
         ],
         model="inherit",
     )
@@ -222,6 +233,8 @@ class BugFixTool(GenerativeModelTool):
         model: str | None = None,
         max_turns: int | None = None,
         effort: str | None = None,
+        webcompat_tools: bool = False,
+        firefox_path: Path | None = None,
         verbose: bool = False,
         log: Path | None = None,
     ) -> BugFixResult:
@@ -239,13 +252,23 @@ class BugFixTool(GenerativeModelTool):
         fx_ctx = FirefoxContext.from_source_repo(source_repo)
         firefox_server = build_firefox_server(fx_ctx)
 
+        # --- Firefox DevTools MCP (stdio; web-compat reproduction) -------- #
+        # Off by default. When enabled the agent can drive a live Firefox to
+        # reproduce web-compat bugs. Launched as a child process via npx.
+        mcp_servers = {"bugzilla": bugzilla_mcp_server, "firefox": firefox_server}
+        if webcompat_tools:
+            mcp_servers["firefox-devtools"] = build_devtools_server(firefox_path)
+            print("[bug_fix] web-compat tools enabled", file=sys.stderr)
+
         # --- Build agent options ------------------------------------------ #
-        system_prompt = load_system_prompt(rules_dir, instructions)
+        system_prompt = load_system_prompt(
+            rules_dir, instructions, webcompat_tools=webcompat_tools
+        )
 
         options = ClaudeAgentOptions(
             system_prompt=system_prompt,
-            mcp_servers={"bugzilla": bugzilla_mcp_server, "firefox": firefox_server},
-            agents={"investigator": make_investigator()},
+            mcp_servers=mcp_servers,
+            agents={"investigator": make_investigator(webcompat_tools=webcompat_tools)},
             cwd=str(source_repo.resolve()),
             add_dirs=[str(rules_dir.resolve())],
             permission_mode="bypassPermissions",
@@ -259,10 +282,15 @@ class BugFixTool(GenerativeModelTool):
                 *BUGZILLA_READ_TOOLS,
                 *BUGZILLA_WRITE_TOOLS,
                 *FIREFOX_TOOLS,
+                *(DEVTOOLS_TOOLS if webcompat_tools else []),
             ],
             model=model,
             max_turns=max_turns,
             **({"effort": effort} if effort else {}),
+            # DevTools accessibility snapshots of complex pages can exceed the
+            # SDK's default 1 MiB stdio buffer; raise it when web-compat tools
+            # are active.
+            **({"max_buffer_size": 10 * 1024 * 1024} if webcompat_tools else {}),
             setting_sources=[],
         )
 
