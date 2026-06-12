@@ -35,13 +35,39 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 FROM base AS agent
 
+# --- Web-compat browser stack -------------------------------------------- #
+# Node 20 (runs the firefox-devtools MCP via npx), xvfb (virtual display),
+# and Firefox Nightly's runtime libraries. Only used when WEBCOMPAT_TOOLS=true,
+# but baked in unconditionally so the single agent image covers both modes.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl xz-utils xvfb xauth \
+        # Firefox runtime deps
+        libgtk-3-0 libdbus-glib-1-2 libx11-xcb1 libxtst6 libxt6 \
+        libpci3 libasound2 libegl1 \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pre-fetch the MCP server into the npm cache so the first run doesn't pay the
+# download cost (npx still resolves it at runtime).
+RUN npm install -g @mozilla/firefox-devtools-mcp-moz
+
+COPY agents/bug-fix/scripts/install-firefox-nightly.sh /tmp/install-firefox-nightly.sh
+RUN chmod +x /tmp/install-firefox-nightly.sh \
+    && /tmp/install-firefox-nightly.sh /opt/firefox \
+    && rm /tmp/install-firefox-nightly.sh
+
+ENV FIREFOX_PATH=/opt/firefox/firefox
+
 RUN useradd --create-home --shell /bin/bash agent \
     && mkdir -p /workspace \
     && chown agent:agent /workspace
 
 USER agent
 
-CMD ["python", "-m", "agent_runner"]
+# xvfb-run provides a virtual display; harmless with --headless, required if a
+# tool ever launches Firefox non-headless.
+CMD ["xvfb-run", "-a", "python", "-m", "agent_runner"]
 
 FROM base AS broker
 
