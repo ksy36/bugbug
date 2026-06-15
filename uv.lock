@@ -21,6 +21,7 @@ members = [
     "agent-tools",
     "bugbug",
     "bugbug-http-service",
+    "hackbot-agent-autowebcompat",
     "hackbot-agent-bug-fix",
     "hackbot-api",
     "hackbot-runtime",
@@ -2129,6 +2130,33 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1d/17/afa56379f94ad0fe8defd37d6eb3f89a25404ffc71d4d848893d270325fc/h2-4.3.0.tar.gz", hash = "sha256:6c59efe4323fa18b47a632221a1888bd7fde6249819beda254aeca909f221bf1", size = 2152026, upload-time = "2025-08-23T18:12:19.778Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/69/b2/119f6e6dcbd96f9069ce9a2665e0146588dc9f88f29549711853645e736a/h2-4.3.0-py3-none-any.whl", hash = "sha256:c438f029a25f7945c69e0ccf0fb951dc3f73a5f6412981daee861431b70e2bdd", size = 61779, upload-time = "2025-08-23T18:12:17.779Z" },
+]
+
+[[package]]
+name = "hackbot-agent-autowebcompat"
+version = "0.1.0"
+source = { editable = "agents/autowebcompat" }
+dependencies = [
+    { name = "agent-tools", extra = ["bugzilla"] },
+    { name = "bugsy" },
+    { name = "claude-agent-sdk" },
+    { name = "hackbot-runtime", extra = ["claude-sdk"] },
+    { name = "mcp" },
+    { name = "six" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-tools", extras = ["bugzilla"], editable = "libs/agent-tools" },
+    { name = "bugsy" },
+    { name = "claude-agent-sdk", specifier = ">=0.1.30" },
+    { name = "hackbot-runtime", extras = ["claude-sdk"], editable = "libs/hackbot-runtime" },
+    { name = "mcp", specifier = ">=1.0.0" },
+    { name = "six" },
+    { name = "starlette", specifier = ">=0.36.0" },
+    { name = "uvicorn", specifier = ">=0.27.0" },
 ]
 
 [[package]]

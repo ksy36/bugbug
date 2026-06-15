@@ -1,0 +1,159 @@
+"""Firefox web-compatibility agent.
+
+Drives an agent that reproduces a broken-site report in Firefox
+using the Firefox DevTools MCP. The bug is passed either inline as ``bug_data``
+text or a Bugzilla ``bug_id`` (read via Bugzilla broker).
+Bugzilla "writes" are recorded as actions into summary.json, never posted.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from claude_agent_sdk import (
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    McpServerConfig,
+    ResultMessage,
+)
+from hackbot_runtime import ActionsRecorder, AgentError, HackbotAgentResult
+from hackbot_runtime.actions import ACTIONS_SERVER_NAME
+from hackbot_runtime.actions.claude_sdk import actions_server_for, actions_to_tool_names
+from hackbot_runtime.claude import Reporter
+
+from .config import BUGZILLA_READ_TOOLS, DEVTOOLS_TOOLS, ENABLED_ACTION_TYPES
+from .devtools_mcp import build_devtools_server
+
+HERE = Path(__file__).resolve().parent
+
+# mode-specific prompt filename under prompts/. Every prompt is
+# system.md (shared rules) + the selected mode file, concatenated.
+PROMPTS = {
+    "triage": "triage.md",
+    "chrome-mask": "chrome_mask.md",
+}
+
+
+class AutoWebcompatResult(HackbotAgentResult):
+    mode: str
+    result: str | None = None
+
+
+def load_system_prompt(mode: str) -> str:
+    try:
+        filename = PROMPTS[mode]
+    except KeyError as exc:
+        raise AgentError(
+            f"unknown mode {mode!r}; expected one of {sorted(PROMPTS)}"
+        ) from exc
+    base = (HERE / "prompts" / "system.md").read_text()
+    mode_specific = (HERE / "prompts" / filename).read_text()
+    return f"{base.rstrip()}\n\n{mode_specific.lstrip()}"
+
+
+def build_user_prompt(bug_data: str | None, bug_id: int | None) -> str:
+    if bug_data:
+        return (
+            "Here is the web-compatibility report to work on:\n\n"
+            f"{bug_data}\n\n"
+            "Follow your task procedure."
+        )
+    if bug_id is not None:
+        return (
+            f"The web-compatibility report to work on is Bugzilla bug {bug_id}. "
+            "Fetch it using the Bugzilla MCP tools, then follow your task procedure."
+        )
+    raise AgentError("neither bug_data nor bug_id was provided")
+
+
+async def run_autowebcompat(
+    *,
+    bugzilla_mcp_server: McpServerConfig,
+    mode: str = "triage",
+    bug_data: str | None = None,
+    bug_id: int | None = None,
+    model: str | None = None,
+    max_turns: int | None = None,
+    effort: str | None = None,
+    firefox_path: str | None = None,
+    verbose: bool = False,
+    log: Path | None = None,
+    actions_recorder: ActionsRecorder | None = None,
+) -> AutoWebcompatResult:
+    """Reproduce a web-compat issue and return the agent's findings.
+
+    Returns an :class:`AutoWebcompatResult` on success; raises
+    :class:`AgentError` if the agent ends in an error.
+    """
+    subject = bug_data if bug_data else f"bug {bug_id}"
+    print(f"[autowebcompat] investigating {subject} (mode={mode})", file=sys.stderr)
+
+    devtools_server = build_devtools_server(
+        firefox_path=Path(firefox_path) if firefox_path else None,
+        headless=True,
+        enable_script=True,
+    )
+
+    # Action-recording MCP server (in-process). Standalone/script runs pass
+    # actions_recorder=None and get a local recorder that copies attachments
+    # under ./artifacts (no uploader).
+    actions_recorder, actions_server = actions_server_for(
+        actions_recorder, types=ENABLED_ACTION_TYPES
+    )
+    enabled_action_tools = actions_to_tool_names(ENABLED_ACTION_TYPES)
+
+    system_prompt = load_system_prompt(mode)
+
+    options = ClaudeAgentOptions(
+        system_prompt=system_prompt,
+        mcp_servers={
+            "bugzilla": bugzilla_mcp_server,
+            "firefox-devtools": devtools_server,
+            ACTIONS_SERVER_NAME: actions_server,
+        },
+        permission_mode="bypassPermissions",
+        allowed_tools=[
+            "Read",
+            "Grep",
+            "Glob",
+            "Bash",
+            *BUGZILLA_READ_TOOLS,
+            *DEVTOOLS_TOOLS,
+            *enabled_action_tools,
+        ],
+        model=model,
+        max_turns=max_turns,
+        **({"effort": effort} if effort else {}),
+        setting_sources=[],
+        # DevTools snapshots/screenshots of complex pages serialize to JSON that
+        # can exceed the SDK's default 1 MiB message buffer (the reader dies
+        # fatally if it does). Raise it well above that ceiling.
+        max_buffer_size=10 * 1024 * 1024,
+    )
+
+    user_prompt = build_user_prompt(bug_data, bug_id)
+
+    result_msg: ResultMessage | None = None
+    with Reporter(verbose=verbose, log_path=log) as reporter:
+        reporter.header(subject)
+        async with ClaudeSDKClient(options=options) as client:
+            await client.query(user_prompt)
+            async for msg in client.receive_response():
+                reporter.message(msg)
+                if isinstance(msg, ResultMessage):
+                    result_msg = msg
+
+    if result_msg is None:
+        raise AgentError(f"{subject}: agent produced no result message")
+    if result_msg.is_error:
+        raise AgentError(
+            f"{subject} investigation failed: {result_msg.result or result_msg.subtype}"
+        )
+
+    return AutoWebcompatResult(
+        mode=mode,
+        result=result_msg.result,
+        num_turns=result_msg.num_turns,
+        total_cost_usd=result_msg.total_cost_usd,
+    )
