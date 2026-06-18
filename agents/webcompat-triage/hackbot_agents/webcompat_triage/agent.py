@@ -1,9 +1,8 @@
-"""Firefox web-compatibility agent.
+"""Firefox web-compatibility triage agent.
 
 Drives an agent that reproduces a broken-site report in Firefox
 using the Firefox DevTools MCP. The bug is passed either inline as ``bug_data``
 text or a Bugzilla ``bug_id`` (read via Bugzilla broker).
-Bugzilla "writes" are recorded as actions into summary.json, never posted.
 """
 
 from __future__ import annotations
@@ -24,32 +23,23 @@ from hackbot_runtime.claude import Reporter
 
 from .config import BUGZILLA_READ_TOOLS, DEVTOOLS_TOOLS, ENABLED_ACTION_TYPES
 from .devtools_mcp import build_devtools_server
+from .result import (
+    RESULT_SERVER_NAME,
+    SUBMIT_RESULT_TOOL,
+    ResultCollector,
+    TriageResult,
+    build_result_server,
+)
 
 HERE = Path(__file__).resolve().parent
 
-# mode-specific prompt filename under prompts/. Every prompt is
-# system.md (shared rules) + the selected mode file, concatenated.
-PROMPTS = {
-    "triage": "triage.md",
-    "chrome-mask": "chrome_mask.md",
-}
+
+class WebcompatTriageResult(HackbotAgentResult):
+    result: TriageResult | None = None
 
 
-class AutoWebcompatResult(HackbotAgentResult):
-    mode: str
-    result: str | None = None
-
-
-def load_system_prompt(mode: str) -> str:
-    try:
-        filename = PROMPTS[mode]
-    except KeyError as exc:
-        raise AgentError(
-            f"unknown mode {mode!r}; expected one of {sorted(PROMPTS)}"
-        ) from exc
-    base = (HERE / "prompts" / "system.md").read_text()
-    mode_specific = (HERE / "prompts" / filename).read_text()
-    return f"{base.rstrip()}\n\n{mode_specific.lstrip()}"
+def load_system_prompt() -> str:
+    return (HERE / "prompts" / "system.md").read_text()
 
 
 def build_user_prompt(bug_data: str | None, bug_id: int | None) -> str:
@@ -67,10 +57,9 @@ def build_user_prompt(bug_data: str | None, bug_id: int | None) -> str:
     raise AgentError("neither bug_data nor bug_id was provided")
 
 
-async def run_autowebcompat(
+async def run_webcompat_triage(
     *,
     bugzilla_mcp_server: McpServerConfig,
-    mode: str = "triage",
     bug_data: str | None = None,
     bug_id: int | None = None,
     model: str | None = None,
@@ -80,14 +69,14 @@ async def run_autowebcompat(
     verbose: bool = False,
     log: Path | None = None,
     actions_recorder: ActionsRecorder | None = None,
-) -> AutoWebcompatResult:
+) -> WebcompatTriageResult:
     """Reproduce a web-compat issue and return the agent's findings.
 
-    Returns an :class:`AutoWebcompatResult` on success; raises
+    Returns a :class:`WebcompatTriageResult` on success; raises
     :class:`AgentError` if the agent ends in an error.
     """
     subject = bug_data if bug_data else f"bug {bug_id}"
-    print(f"[autowebcompat] investigating {subject} (mode={mode})", file=sys.stderr)
+    print(f"[webcompat-triage] triaging {subject}", file=sys.stderr)
 
     devtools_server = build_devtools_server(
         firefox_path=Path(firefox_path) if firefox_path else None,
@@ -103,7 +92,12 @@ async def run_autowebcompat(
     )
     enabled_action_tools = actions_to_tool_names(ENABLED_ACTION_TYPES)
 
-    system_prompt = load_system_prompt(mode)
+    # Structured-result MCP server (in-process): the agent calls submit_result
+    # once at the end, giving a predictable JSON result instead of free text.
+    result_collector = ResultCollector()
+    result_server = build_result_server(result_collector)
+
+    system_prompt = load_system_prompt()
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
@@ -111,6 +105,7 @@ async def run_autowebcompat(
             "bugzilla": bugzilla_mcp_server,
             "firefox-devtools": devtools_server,
             ACTIONS_SERVER_NAME: actions_server,
+            RESULT_SERVER_NAME: result_server,
         },
         permission_mode="bypassPermissions",
         allowed_tools=[
@@ -121,6 +116,7 @@ async def run_autowebcompat(
             *BUGZILLA_READ_TOOLS,
             *DEVTOOLS_TOOLS,
             *enabled_action_tools,
+            SUBMIT_RESULT_TOOL,
         ],
         model=model,
         max_turns=max_turns,
@@ -150,10 +146,13 @@ async def run_autowebcompat(
         raise AgentError(
             f"{subject} investigation failed: {result_msg.result or result_msg.subtype}"
         )
+    if result_collector.result is None:
+        raise AgentError(
+            f"{subject}: agent finished without submitting a result via submit_result"
+        )
 
-    return AutoWebcompatResult(
-        mode=mode,
-        result=result_msg.result,
+    return WebcompatTriageResult(
+        result=result_collector.result,
         num_turns=result_msg.num_turns,
         total_cost_usd=result_msg.total_cost_usd,
     )

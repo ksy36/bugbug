@@ -19,7 +19,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-log = logging.getLogger("autowebcompat-broker")
+log = logging.getLogger("webcompat-triage-broker")
 
 
 class BrokerInputs(BaseSettings):

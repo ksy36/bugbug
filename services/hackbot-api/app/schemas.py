@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -69,16 +69,15 @@ class BugFixInputs(BaseModel):
     effort: str | None = None
 
 
-class AutoWebcompatInputs(BaseModel):
+class WebcompatTriageInputs(BaseModel):
     bug_data: str | None = None
     bug_id: int | None = None
-    mode: Literal["triage", "chrome-mask"] = "triage"
     model: str | None = None
     max_turns: int | None = None
     effort: str | None = None
 
     @model_validator(mode="after")
-    def _require_subject(self) -> "AutoWebcompatInputs":
+    def _require_subject(self) -> "WebcompatTriageInputs":
         if self.bug_data is None and self.bug_id is None:
             raise ValueError("provide at least one of bug_data or bug_id")
         return self

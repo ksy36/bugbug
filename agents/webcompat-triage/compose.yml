@@ -1,8 +1,8 @@
 services:
-  autowebcompat-broker:
+  webcompat-triage-broker:
     build:
       context: ../..
-      dockerfile: agents/autowebcompat/Dockerfile
+      dockerfile: agents/webcompat-triage/Dockerfile
       target: broker
     environment:
       BUGZILLA_API_URL: ${BUGZILLA_API_URL}
@@ -10,17 +10,16 @@ services:
     expose:
       - "8765"
 
-  autowebcompat-agent:
+  webcompat-triage-agent:
     build:
       context: ../..
-      dockerfile: agents/autowebcompat/Dockerfile
+      dockerfile: agents/webcompat-triage/Dockerfile
       target: agent
     environment:
       - RUN_ID
       - BUG_DATA
       - BUG_ID
-      - MODE=${MODE:-triage}
-      - BUGZILLA_MCP_URL=http://autowebcompat-broker:8765/mcp
+      - BUGZILLA_MCP_URL=http://webcompat-triage-broker:8765/mcp
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?error}
       # No uploader locally: summary/logs/attachments are written under
       # /artifacts/<run_id>, bind-mounted to the host's ~/hackbot/artifacts.
@@ -28,5 +27,5 @@ services:
     volumes:
       - ${HOME}/hackbot/artifacts:/artifacts
     depends_on:
-      autowebcompat-broker:
+      webcompat-triage-broker:
         condition: service_started

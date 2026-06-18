@@ -1,7 +1,7 @@
 [project]
-name = "hackbot-agent-autowebcompat"
+name = "hackbot-agent-webcompat-triage"
 version = "0.1.0"
-description = "Cloud Run Job image that runs the autowebcompat agent for hackbot-api"
+description = "Cloud Run Job image that runs the webcompat-triage agent for hackbot-api"
 requires-python = ">=3.12"
 dependencies = [
     "hackbot-runtime[claude-sdk]",
@@ -10,6 +10,8 @@ dependencies = [
     "six",
     "claude-agent-sdk>=0.1.30",
     "mcp>=1.0.0",
+    "mozdownload",
+    "mozinstall",
     "starlette>=0.36.0",
     "uvicorn>=0.27.0",
 ]
