@@ -7,16 +7,6 @@ BUGZILLA_READ_TOOLS = [
     "mcp__bugzilla__download_attachment",
 ]
 
-# Recordable Bugzilla action types the agent may take, by dotted id. Full
-# bug-fix parity; nothing is posted — actions are recorded into summary.json.
-# The system prompt governs when (if ever) the model records one.
-ENABLED_ACTION_TYPES = [
-    "bugzilla.update_bug",
-    "bugzilla.add_comment",
-    "bugzilla.add_attachment",
-    "bugzilla.create_bug",
-]
-
 # Firefox DevTools MCP tools (@mozilla/firefox-devtools-mcp-moz), exposed under
 # the "firefox-devtools" server name. Web-compat reproduction subset: page
 # navigation, accessibility snapshots + UID-based interaction, console/network

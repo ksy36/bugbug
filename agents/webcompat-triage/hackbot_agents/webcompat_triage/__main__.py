@@ -36,7 +36,6 @@ async def main(ctx: HackbotContext) -> WebcompatTriageResult:
         firefox_path=firefox_path,
         log=ctx.log_path,
         verbose=True,
-        actions_recorder=ctx.actions,
     )
 
 

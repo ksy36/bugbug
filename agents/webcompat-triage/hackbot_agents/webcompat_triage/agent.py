@@ -16,12 +16,10 @@ from claude_agent_sdk import (
     McpServerConfig,
     ResultMessage,
 )
-from hackbot_runtime import ActionsRecorder, AgentError, HackbotAgentResult
-from hackbot_runtime.actions import ACTIONS_SERVER_NAME
-from hackbot_runtime.actions.claude_sdk import actions_server_for, actions_to_tool_names
+from hackbot_runtime import AgentError, HackbotAgentResult
 from hackbot_runtime.claude import Reporter
 
-from .config import BUGZILLA_READ_TOOLS, DEVTOOLS_TOOLS, ENABLED_ACTION_TYPES
+from .config import BUGZILLA_READ_TOOLS, DEVTOOLS_TOOLS
 from .devtools_mcp import build_devtools_server
 from .result import (
     RESULT_SERVER_NAME,
@@ -68,7 +66,6 @@ async def run_webcompat_triage(
     firefox_path: str | None = None,
     verbose: bool = False,
     log: Path | None = None,
-    actions_recorder: ActionsRecorder | None = None,
 ) -> WebcompatTriageResult:
     """Reproduce a web-compat issue and return the agent's findings.
 
@@ -84,14 +81,6 @@ async def run_webcompat_triage(
         enable_script=True,
     )
 
-    # Action-recording MCP server (in-process). Standalone/script runs pass
-    # actions_recorder=None and get a local recorder that copies attachments
-    # under ./artifacts (no uploader).
-    actions_recorder, actions_server = actions_server_for(
-        actions_recorder, types=ENABLED_ACTION_TYPES
-    )
-    enabled_action_tools = actions_to_tool_names(ENABLED_ACTION_TYPES)
-
     # Structured-result MCP server (in-process): the agent calls submit_result
     # once at the end, giving a predictable JSON result instead of free text.
     result_collector = ResultCollector()
@@ -104,7 +93,6 @@ async def run_webcompat_triage(
         mcp_servers={
             "bugzilla": bugzilla_mcp_server,
             "firefox-devtools": devtools_server,
-            ACTIONS_SERVER_NAME: actions_server,
             RESULT_SERVER_NAME: result_server,
         },
         permission_mode="bypassPermissions",
@@ -115,7 +103,6 @@ async def run_webcompat_triage(
             "Bash",
             *BUGZILLA_READ_TOOLS,
             *DEVTOOLS_TOOLS,
-            *enabled_action_tools,
             SUBMIT_RESULT_TOOL,
         ],
         model=model,
