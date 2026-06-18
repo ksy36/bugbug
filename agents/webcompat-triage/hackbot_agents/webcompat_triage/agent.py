@@ -86,22 +86,29 @@ async def run_webcompat_triage(
     result_collector = ResultCollector()
     result_server = build_result_server(result_collector)
 
+    # Only wire up Bugzilla when there's a bug to fetch. With inline bug_data
+    # there's nothing to read, so the bugzilla MCP is not available
+    mcp_servers: dict[str, McpServerConfig] = {
+        "firefox-devtools": devtools_server,
+        RESULT_SERVER_NAME: result_server,
+    }
+    bugzilla_tools: list[str] = []
+    if bug_id is not None:
+        mcp_servers["bugzilla"] = bugzilla_mcp_server
+        bugzilla_tools = BUGZILLA_READ_TOOLS
+
     system_prompt = load_system_prompt()
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
-        mcp_servers={
-            "bugzilla": bugzilla_mcp_server,
-            "firefox-devtools": devtools_server,
-            RESULT_SERVER_NAME: result_server,
-        },
+        mcp_servers=mcp_servers,
         permission_mode="bypassPermissions",
         allowed_tools=[
             "Read",
             "Grep",
             "Glob",
             "Bash",
-            *BUGZILLA_READ_TOOLS,
+            *bugzilla_tools,
             *DEVTOOLS_TOOLS,
             SUBMIT_RESULT_TOOL,
         ],
