@@ -64,6 +64,7 @@ async def run_webcompat_triage(
     max_turns: int | None = None,
     effort: str | None = None,
     firefox_path: str | None = None,
+    chrome_mask_profile: Path | None = None,
     verbose: bool = False,
     log: Path | None = None,
 ) -> WebcompatTriageResult:
@@ -79,6 +80,8 @@ async def run_webcompat_triage(
         firefox_path=Path(firefox_path) if firefox_path else None,
         headless=True,
         enable_script=True,
+        enable_privileged_context=chrome_mask_profile is not None,
+        profile_path=chrome_mask_profile,
     )
 
     # Structured-result MCP server (in-process): the agent calls submit_result

@@ -15,13 +15,22 @@ class TriageResult(BaseModel):
     reproduced: bool = Field(
         description="Whether the reported issue reproduced in Firefox.",
     )
+    chrome_mask_fixed: bool | None = Field(
+        description=(
+            "Whether enabling the Chrome Mask extension (spoofing a Chrome "
+            "User-Agent) fixed the reported behavior: true if it fixed it, "
+            "false if it did not, null if the Chrome Mask test was not run "
+            "(e.g. the issue did not reproduce at baseline)."
+        ),
+    )
     summary: str = Field(
         description="Human-readable report of what was observed.",
     )
     steps: str = Field(
         description=(
-            "Ordered steps taken to attempt reproduction, as a single numbered "
-            "list (1., 2., 3., ...), one step per line."
+            "Ordered steps to reproduce the issue at baseline (Chrome Mask off), "
+            "as a single numbered list (1., 2., 3., ...), one step per line. Do "
+            "not include the Chrome Mask enabling/testing steps."
         ),
     )
 
