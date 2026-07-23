@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 from app.schemas import (
+    AutowebcompatDiagnosisInputs,
     AutowebcompatReproInputs,
     BugFixInputs,
     BuildRepairInputs,
@@ -66,6 +67,16 @@ AGENT_REGISTRY: dict[str, AgentSpec] = {
         ),
         job_name="hackbot-agent-autowebcompat-repro",
         input_schema=AutowebcompatReproInputs,
+    ),
+    "autowebcompat-diagnosis": AgentSpec(
+        name="autowebcompat-diagnosis",
+        description=(
+            "Diagnose a Firefox web-compatibility issue by reproducing it in "
+            "headless Firefox and Chrome and comparing the two, and return a "
+            "root-cause analysis (no fix)."
+        ),
+        job_name="hackbot-agent-autowebcompat-diagnosis",
+        input_schema=AutowebcompatDiagnosisInputs,
     ),
     "build-repair": AgentSpec(
         name="build-repair",
