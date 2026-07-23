@@ -7,6 +7,7 @@ from hackbot_runtime import (
     HackbotContext,
     run_async,
 )
+from hackbot_runtime.backends import HttpServer
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .agent import (
@@ -35,6 +36,7 @@ class AgentInputs(BaseSettings):
         | Literal["max"]
         | None
     ) = None
+    backend: Literal["claude", "codex"] = "claude"
 
     model_config = SettingsConfigDict(extra="ignore")
 
@@ -62,13 +64,11 @@ async def main(ctx: HackbotContext) -> AutowebcompatResult:
             effort=inputs.effort,
             log=ctx.log_path,
             verbose=True,
+            backend=inputs.backend,
         ),
         tracker,
         input_data,
-        bugzilla_mcp_server={
-            "type": "http",
-            "url": inputs.bugzilla_mcp_url,
-        },
+        bugzilla_mcp_server=HttpServer(url=inputs.bugzilla_mcp_url),
         publish_file=ctx.publish_file,
     )
     end_time = datetime.now()

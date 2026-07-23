@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -88,6 +88,9 @@ class AutowebcompatReproInputs(BaseModel):
     model: str | None = None
     max_turns: int | None = None
     effort: str | None = None
+    # Which agent engine to drive: "claude" (Claude Agent SDK, default) or
+    # "codex" (OpenAI Codex SDK). Maps to the BACKEND env override.
+    backend: Literal["claude", "codex"] = "claude"
 
     @model_validator(mode="after")
     def _require_subject(self) -> "AutowebcompatReproInputs":

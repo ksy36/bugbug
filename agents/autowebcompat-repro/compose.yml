@@ -20,7 +20,12 @@ services:
       - BUG_DATA
       - BUG_ID
       - BUGZILLA_MCP_URL=http://autowebcompat-repro-broker:8765/mcp
+      - BACKEND
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?error}
+      # Needed only for the codex backend. Fail loudly if selected without a
+      # key (an empty value surfaces as a confusing 401 from the app-server);
+      # a plain unset default keeps the claude path working without it.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?set OPENAI_API_KEY (export it) to run BACKEND=codex}
       # No uploader locally: summary/logs/attachments are written under
       # /artifacts/<run_id>, bind-mounted to the host's ~/hackbot/artifacts.
       - ARTIFACTS_DIR=/artifacts

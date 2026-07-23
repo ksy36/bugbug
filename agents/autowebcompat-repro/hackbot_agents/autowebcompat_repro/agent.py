@@ -18,13 +18,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Generic, Literal
 
-from claude_agent_sdk import (
-    ClaudeAgentOptions,
-    ClaudeSDKClient,
-    McpServerConfig,
-    ResultMessage,
-)
 from hackbot_runtime import AgentError
+from hackbot_runtime.backends import (
+    HttpServer,
+    NeutralServer,
+    Result,
+    load_backend,
+)
 from hackbot_runtime.claude import Reporter
 from pydantic import BaseModel
 
@@ -40,7 +40,9 @@ from .result import (
     ResultCollector,
     ResultT,
     TestPlanResult,
+    build_codex_result_server,
     build_result_server,
+    read_codex_result,
 )
 from .setup_profile import setup_profile
 
@@ -99,6 +101,12 @@ class TaskConfig:
     ) = None
     log: Path | None = None
     verbose: bool = True
+    # Which agent engine to drive: "claude" (Claude Agent SDK, default) or
+    # "codex" (OpenAI Codex SDK).
+    backend: Literal["claude", "codex"] = "claude"
+    # Directory for per-task scratch files (e.g. the Codex submit_result
+    # marshalling file). Defaults to a temp dir when unset.
+    result_dir: Path | None = None
 
 
 @dataclass
@@ -107,7 +115,11 @@ class TaskRun:
     start_time: datetime
     end_time: datetime
     num_turns: int
+    # Claude reports dollars; Codex reports token counts. A run carries
+    # whichever its backend supplied, and neither when the backend reports
+    # neither.
     total_cost_usd: float | None
+    usage: dict[str, Any] | None = None
 
 
 class RunTracker:
@@ -130,7 +142,7 @@ class RunTracker:
     def start_task(self, name: str) -> None:
         self.current_task = name, datetime.now()
 
-    def end_task(self, name: str, result_msg: ResultMessage) -> None:
+    def end_task(self, name: str, result: Result) -> None:
         if self.current_task is None:
             logger.warning("Got end_task without start_task")
             return
@@ -146,8 +158,8 @@ class RunTracker:
                 name=name,
                 start_time=start_time,
                 end_time=datetime.now(),
-                num_turns=result_msg.num_turns,
-                total_cost_usd=result_msg.total_cost_usd,
+                num_turns=result.num_turns,
+                total_cost_usd=result.total_cost_usd,
             )
         )
 
@@ -164,20 +176,16 @@ class Task(ABC, Generic[ResultT]):
         self.allowed_tools = ["Read", "Grep", "Glob", "Bash", self.submit_result_tool]
 
         self.result_collector = ResultCollector(self.result_cls)
-        self.mcp_servers = {}
-
-        result_server = self.result_server()
-        if result_server is not None:
-            self.mcp_servers[self.result_server_name] = result_server
+        # Neutral server descriptors (browser DevTools, bugzilla). The
+        # backend-specific result server is added at run() time, since Claude
+        # serves it in-process while Codex spawns it as a child.
+        self.mcp_servers: dict[str, NeutralServer] = {}
 
     def add_mcp_server(
-        self, name: str, server: McpServerConfig, tools: list[str]
+        self, name: str, server: NeutralServer, tools: list[str]
     ) -> None:
         self.mcp_servers[name] = server
         self.allowed_tools.extend(tools)
-
-    def result_server(self) -> McpServerConfig | None:
-        return build_result_server(self.result_collector)
 
     def system_prompt(self) -> str:
         return (HERE / "prompts" / "system.md").read_text()
@@ -188,20 +196,46 @@ class Task(ABC, Generic[ResultT]):
     @abstractmethod
     def subject(self) -> Any: ...
 
-    def agent_options(self) -> ClaudeAgentOptions:
-        return ClaudeAgentOptions(
-            system_prompt=self.system_prompt(),
-            mcp_servers=self.mcp_servers,
-            permission_mode="bypassPermissions",
+    def build_backend(self, result_path: Path):
+        """Construct the configured backend, wiring the result server per SDK.
+
+        Claude serves ``submit_result`` in-process; Codex spawns it as a stdio
+        child that marshals the validated result back through ``result_path``.
+        """
+        backend_cls = load_backend(self.task_config.backend)
+        if self.task_config.backend == "codex":
+            servers: dict[str, NeutralServer] = {
+                **self.mcp_servers,
+                self.result_server_name: build_codex_result_server(
+                    self.result_cls, result_path
+                ),
+            }
+            return backend_cls(
+                mcp_servers=servers,
+                model=self.task_config.model,
+                max_turns=self.task_config.max_turns,
+                effort=self.task_config.effort,
+                # The codex app-server does not read OPENAI_API_KEY from the
+                # environment itself; hand it through so the backend can log in.
+                # When unset it falls back to the codex home's existing login.
+                api_key=os.environ.get("OPENAI_API_KEY") or None,
+            )
+        # Claude: the in-process result server is a native SDK config that the
+        # ClaudeBackend passes through unchanged alongside neutral servers.
+        servers = {
+            **self.mcp_servers,
+            self.result_server_name: build_result_server(self.result_collector),
+        }
+        return backend_cls(
+            mcp_servers=servers,
             allowed_tools=self.allowed_tools,
             model=self.task_config.model,
             max_turns=self.task_config.max_turns,
-            setting_sources=[],
+            effort=self.task_config.effort,
             # DevTools snapshots of complex pages serialize to JSON that can
             # exceed the SDK's default 1 MiB message buffer (the reader dies
             # fatally if it does). Raise it well above that ceiling.
             max_buffer_size=10 * 1024 * 1024,
-            effort=self.task_config.effort,
         )
 
     async def run(self) -> ResultT:
@@ -212,24 +246,34 @@ class Task(ABC, Generic[ResultT]):
             preview = f"{preview[:200]}..."
         logger.info("Running %s with %s", self.__class__.__name__, preview)
 
-        result_msg: ResultMessage | None = None
+        result_dir = self.task_config.result_dir or Path(tempfile.gettempdir())
+        result_path = make_empty_temp_file(result_dir, f"{self.name}-result=", ".json")
+
+        final: Result | None = None
         with Reporter(
             verbose=self.task_config.verbose, log_path=self.task_config.log
         ) as reporter:
             reporter.header(subject)
-            async with ClaudeSDKClient(options=self.agent_options()) as client:
-                await client.query(self.user_prompt())
-                async for msg in client.receive_response():
-                    reporter.message(msg)
-                    if isinstance(msg, ResultMessage):
-                        result_msg = msg
+            backend = self.build_backend(result_path)
+            async with backend:
+                async for ev in backend.run_session(
+                    self.user_prompt(), system_prompt=self.system_prompt()
+                ):
+                    reporter.event(ev)
+                    if isinstance(ev, Result):
+                        final = ev
 
-        if result_msg is None:
-            raise AgentError(f"{subject}: agent produced no result message")
-        self.run_tracker.end_task(self.name, result_msg)
-        if result_msg.is_error:
-            raise AgentError(
-                f"{subject} investigation failed: {result_msg.result or result_msg.subtype}"
+        if final is None:
+            raise AgentError(f"{subject}: agent produced no result event")
+        self.run_tracker.end_task(self.name, final)
+        if final.is_error:
+            raise AgentError(f"{subject} investigation failed: {final.error}")
+
+        # Codex marshals the validated result through a file; Claude stores it
+        # in-process on the collector.
+        if self.task_config.backend == "codex":
+            self.result_collector.result = read_codex_result(
+                self.result_cls, result_path
             )
         if self.result_collector.result is None:
             raise AgentError(
@@ -254,7 +298,7 @@ class TestPlan(Task):
         task_config: TaskConfig,
         run_tracker: RunTracker,
         input_data: AutoWebcompatInput,
-        bugzilla_mcp_server: McpServerConfig,
+        bugzilla_mcp_server: HttpServer,
     ):
         super().__init__(task_config, run_tracker)
         self.input_data = input_data
@@ -316,7 +360,7 @@ class BugReproduction(Task):
         firefox_path: Path,
         profile_path: Path,
         input_data: AutoWebcompatInput,
-        bugzilla_mcp_server: McpServerConfig,
+        bugzilla_mcp_server: HttpServer,
         screenshot_dir: Path,
         chrome_path: Path,
     ):
@@ -626,7 +670,7 @@ async def run_autowebcompat_repro(
     default_config: TaskConfig,
     tracker: RunTracker,
     input_data: AutoWebcompatInput,
-    bugzilla_mcp_server: McpServerConfig,
+    bugzilla_mcp_server: HttpServer,
     publish_file: PublishFile,
 ) -> AutowebcompatReproResult:
     """Reproduce a web-compat issue and return the agent's findings.

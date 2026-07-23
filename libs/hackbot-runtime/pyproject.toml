@@ -13,6 +13,10 @@ dependencies = [
 
 [project.optional-dependencies]
 claude-sdk = ["claude-agent-sdk>=0.1.30", "agent-tools[claude-sdk]"]
+# OpenAI Codex SDK (beta) for the codex backend. NOTE: openai-codex pins a
+# openai-codex-cli-bin build that has at times been pulled from PyPI; if a sync
+# fails, install with `--no-deps` and add the cli-bin separately (see larrey).
+codex-sdk = ["openai-codex", "mcp>=1.0.0"]
 # Pinned exactly: mozphab.git/mozphab.diff are internal implementation
 # classes of a CLI tool, not a published library API — a minor/patch bump
 # could change their behavior without notice.

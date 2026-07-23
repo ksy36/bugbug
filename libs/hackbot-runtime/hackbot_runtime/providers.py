@@ -1,8 +1,8 @@
 """Credentials the runtime provides to agents.
 
 The runtime owns where credentials come from so agents don't reach into the
-environment themselves. Today only Anthropic is wired; the :class:`Provider`
-protocol leaves room to add others (Vertex, OpenAI, ...) without changing the
+environment themselves. Anthropic and OpenAI are wired; the :class:`Provider`
+protocol leaves room to add others (Vertex, ...) without changing the
 agent-facing surface.
 """
 
@@ -44,5 +44,27 @@ class AnthropicAuth:
             raise ProviderError(
                 f"{self.env_var} is not set; the runtime cannot provide "
                 "Anthropic credentials to this agent."
+            )
+        return key
+
+
+class OpenAIAuth:
+    """OpenAI credentials for the Codex backend, read from the environment.
+
+    Mirrors :class:`AnthropicAuth`: exposes the key explicitly so a missing
+    credential fails fast with a clear message rather than surfacing as an
+    opaque error deep inside a request.
+    """
+
+    name = "openai"
+    env_var = "OPENAI_API_KEY"
+
+    @property
+    def api_key(self) -> str:
+        key = os.environ.get(self.env_var)
+        if not key:
+            raise ProviderError(
+                f"{self.env_var} is not set; the runtime cannot provide "
+                "OpenAI credentials to this agent."
             )
         return key

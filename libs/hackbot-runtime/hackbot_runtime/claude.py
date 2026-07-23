@@ -24,6 +24,8 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
+from hackbot_runtime.backends import base as events
+
 
 def _truncate(s: str, n: int = 500) -> str:
     return s if len(s) <= n else s[:n] + f"... [{len(s) - n} more chars]"
@@ -123,3 +125,65 @@ class Reporter:
             self._emit(line, always=True)
             if msg.is_error:
                 self._emit(f"[done] ERROR: {msg.result}", always=True)
+
+    def event(self, ev: events.AgentEvent) -> None:
+        """Render a backend-neutral :class:`AgentEvent`.
+
+        Mirrors :meth:`message` but consumes the events emitted by any
+        backend (Claude or Codex), so on-screen / log output is identical
+        regardless of engine.
+        """
+        if isinstance(ev, events.SessionStarted):
+            self._emit(f"[system] session started (model={ev.model})")
+
+        elif isinstance(ev, events.TurnStart):
+            self._turn = ev.turn
+            self._emit(f"\n--- turn {self._turn} ---")
+
+        elif isinstance(ev, events.AssistantText):
+            label = "subagent" if ev.subagent else "agent"
+            self._emit(f"\n[{label}] {ev.text}", always=not ev.subagent)
+
+        elif isinstance(ev, events.Thinking):
+            label = "subagent" if ev.subagent else "agent"
+            thinking = ev.text.strip()
+            snippet = thinking.split("\n", 1)[0]
+            self._emit(
+                f"[{label}:thinking] {_truncate(snippet, 120)}",
+                full=f"[{label}:thinking]\n{thinking}",
+            )
+
+        elif isinstance(ev, events.ToolCall):
+            label = "subagent" if ev.subagent else "agent"
+            inp = json.dumps(ev.input, default=str)
+            inp_full = json.dumps(ev.input, indent=2, default=str)
+            self._emit(
+                f"[{label}→tool] {ev.name}({_truncate(inp, 300)})",
+                full=f"[{label}→tool] {ev.name}\n{inp_full}",
+            )
+
+        elif isinstance(ev, events.ToolResult):
+            marker = "ERROR" if ev.is_error else "ok"
+            self._emit(
+                f"  [tool←{marker}] {_truncate(ev.text, 400)}",
+                full=f"  [tool←{marker}]\n{ev.text}",
+            )
+
+        elif isinstance(ev, events.Notice):
+            data = json.dumps(ev.data, default=str)
+            self._emit(
+                f"[system:{ev.subtype}] {_truncate(data, 200)}",
+                full=f"[system:{ev.subtype}] {data}",
+            )
+
+        elif isinstance(ev, events.Result):
+            self._emit(f"\n{'=' * 60}", always=True)
+            if ev.total_cost_usd:
+                line = f"[done] turns={ev.num_turns} cost=${ev.total_cost_usd:.4f}"
+            elif ev.usage:
+                line = f"[done] turns={ev.num_turns} usage={ev.usage}"
+            else:
+                line = f"[done] turns={ev.num_turns}"
+            self._emit(line, always=True)
+            if ev.is_error:
+                self._emit(f"[done] ERROR: {ev.error}", always=True)

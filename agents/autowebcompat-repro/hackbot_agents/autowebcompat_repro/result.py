@@ -1,16 +1,38 @@
-"""Structured result reporting for the autowebcompat-repro agent."""
+"""Structured result reporting for the autowebcompat-repro agent.
+
+The reproduction tasks end by calling ``submit_result`` exactly once with a
+payload validated against the task's Pydantic result model. That tool works
+under both backends off one shared validation path:
+
+  - Claude: the tool runs in-process, so the validated result is stored
+    directly on the :class:`ResultCollector` the parent holds.
+  - Codex: the tool runs in a standalone stdio MCP server that Codex spawns as
+    a child process, so it writes the validated JSON to a result path passed in
+    via the environment; the parent reads that file back once the session ends.
+"""
 
 from __future__ import annotations
 
 import imghdr
+import json
+import os
 from pathlib import Path
-from typing import Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
-from claude_agent_sdk import McpServerConfig, create_sdk_mcp_server, tool
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 RESULT_SERVER_NAME = "autowebcompat-repro"
 SUBMIT_RESULT_TOOL = f"mcp__{RESULT_SERVER_NAME}__submit_result"
+
+SUBMIT_RESULT_DESCRIPTION = (
+    "Submit the final web-compatibility investigation result. Call exactly "
+    "once, at the end, after completing the investigation."
+)
+
+# Env vars the Codex child reads: where to write the validated result, and
+# which Pydantic result model to validate the payload against.
+RESULT_PATH_ENV = "AUTOWEBCOMPAT_RESULT_PATH"
+RESULT_CLS_ENV = "AUTOWEBCOMPAT_RESULT_CLS"
 
 ResultT = TypeVar("ResultT", bound=BaseModel)
 
@@ -19,7 +41,7 @@ class ResultCollector(Generic[ResultT]):
     """Holds the result submitted by the agent, if any."""
 
     def __init__(self, result_cls: type[ResultT]) -> None:
-        self._result_cls: type[ResultT] = result_cls
+        self.result_cls: type[ResultT] = result_cls
         self.result: ResultT | None = None
 
 
@@ -160,31 +182,138 @@ class ChromeMaskResult(BaseModel):
     )
 
 
-def build_result_server(collector: ResultCollector) -> McpServerConfig:
-    """Build an in-process MCP server exposing the ``submit_result`` tool.
+def submit_result_schema(result_cls: type[BaseModel]) -> dict[str, Any]:
+    """The JSON Schema the submit_result tool accepts for ``result_cls``."""
+    return {**result_cls.model_json_schema(), "additionalProperties": False}
 
-    The handler validates the payload against :class:`ReproductionResult` and stores
-    it on ``collector``. A validation error is returned to the model (as tool
-    output) so it can correct and resubmit rather than failing the run.
+
+def validate_payload(
+    result_cls: type[BaseModel], args: dict[str, Any]
+) -> tuple[BaseModel | None, str | None]:
+    """Validate a submit_result payload.
+
+    Returns ``(result, None)`` on success or ``(None, error_text)`` on failure.
+    The error text is fed back to the model as tool output so it can correct and
+    resubmit rather than failing the run. Shared by both backends so the accepted
+    payload and error feedback are identical regardless of engine.
     """
+    try:
+        return result_cls.model_validate(args), None
+    except ValidationError as exc:
+        return None, f"Invalid result: {exc}"
+
+
+def build_result_server(collector: ResultCollector):
+    """Build the in-process Claude SDK MCP server exposing ``submit_result``.
+
+    The handler validates the payload and stores it on ``collector``. A
+    validation error is returned to the model (as tool output) so it can correct
+    and resubmit rather than failing the run.
+    """
+    from claude_agent_sdk import create_sdk_mcp_server, tool
 
     @tool(
         "submit_result",
-        "Submit the final web-compatibility investigation result. Call exactly "
-        "once, at the end, after completing the investigation.",
-        {
-            **collector._result_cls.model_json_schema(),
-            "additionalProperties": False,
-        },
+        SUBMIT_RESULT_DESCRIPTION,
+        submit_result_schema(collector.result_cls),
     )
     async def submit_result(args: dict) -> dict:
-        try:
-            collector.result = collector._result_cls.model_validate(args)
-        except ValidationError as exc:
-            return {
-                "content": [{"type": "text", "text": f"Invalid result: {exc}"}],
-                "is_error": True,
-            }
+        result, error = validate_payload(collector.result_cls, args)
+        if error is not None:
+            return {"content": [{"type": "text", "text": error}], "is_error": True}
+        collector.result = result
         return {"content": [{"type": "text", "text": "Result recorded."}]}
 
     return create_sdk_mcp_server(name=RESULT_SERVER_NAME, tools=[submit_result])
+
+
+def build_codex_result_server(result_cls: type[BaseModel], result_path: Path):
+    """Describe the stdio server Codex spawns to serve ``submit_result``.
+
+    The child runs this module with ``RESULT_PATH_ENV`` pointing at
+    ``result_path`` and ``RESULT_CLS_ENV`` naming the result model; on submit it
+    writes the validated JSON there, which the parent reads once the session
+    ends. Returns a neutral :class:`~hackbot_runtime.backends.StdioServer`.
+    """
+    from hackbot_runtime.backends import StdioServer
+
+    ref = f"{result_cls.__module__}:{result_cls.__qualname__}"
+    return StdioServer(
+        command="python",
+        args=["-m", "hackbot_agents.autowebcompat_repro.result"],
+        env={RESULT_PATH_ENV: str(result_path), RESULT_CLS_ENV: ref},
+    )
+
+
+def read_codex_result(result_cls: type[ResultT], result_path: Path) -> ResultT | None:
+    """Read back the result the Codex child wrote, if any."""
+    if not result_path.exists():
+        return None
+    result, _ = validate_payload(result_cls, json.loads(result_path.read_text()))
+    return result
+
+
+async def serve_stdio_result(result_cls: type[BaseModel], result_path: Path) -> None:
+    """Serve ``submit_result`` as a standalone stdio MCP server (Codex child).
+
+    stdout is the MCP protocol channel; nothing human-readable may go there.
+    """
+    import mcp.types as mcp_types
+    from mcp.server.lowlevel import Server
+    from mcp.server.stdio import stdio_server
+
+    server = Server(RESULT_SERVER_NAME, version="0.1.0")
+
+    @server.list_tools()
+    async def list_tools() -> list[mcp_types.Tool]:
+        return [
+            mcp_types.Tool(
+                name="submit_result",
+                description=SUBMIT_RESULT_DESCRIPTION,
+                inputSchema=submit_result_schema(result_cls),
+            )
+        ]
+
+    @server.call_tool()
+    async def call_tool(name: str, arguments: dict) -> mcp_types.CallToolResult:
+        if name != "submit_result":
+            return mcp_types.CallToolResult(
+                content=[
+                    mcp_types.TextContent(type="text", text=f"unknown tool: {name}")
+                ],
+                isError=True,
+            )
+        result, error = validate_payload(result_cls, arguments or {})
+        if error is not None:
+            return mcp_types.CallToolResult(
+                content=[mcp_types.TextContent(type="text", text=error)],
+                isError=True,
+            )
+        # Marshal the validated result back to the parent across the process
+        # boundary. Write atomically so a partial file is never read.
+        tmp = result_path.with_suffix(result_path.suffix + ".tmp")
+        tmp.write_text(result.model_dump_json())
+        tmp.replace(result_path)
+        return mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text="Result recorded.")]
+        )
+
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream, write_stream, server.create_initialization_options()
+        )
+
+
+def main() -> None:
+    """Entry point for the Codex-spawned ``submit_result`` child process."""
+    import asyncio
+    import importlib
+
+    result_path = Path(os.environ[RESULT_PATH_ENV])
+    module_name, _, cls_name = os.environ[RESULT_CLS_ENV].partition(":")
+    result_cls = getattr(importlib.import_module(module_name), cls_name)
+    asyncio.run(serve_stdio_result(result_cls, result_path))
+
+
+if __name__ == "__main__":
+    main()

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from claude_agent_sdk.types import McpStdioServerConfig
+from hackbot_runtime.backends import StdioServer
 
 
 def resolve_bin(bin_name: str) -> str:
@@ -29,7 +29,7 @@ def build_firefox_devtools_server(
     enable_script: bool = True,
     enable_privileged_context: bool = False,
     profile_path: Path | None = None,
-) -> McpStdioServerConfig:
+) -> StdioServer:
     """Build the stdio config for the Firefox DevTools MCP server.
 
     Args:
@@ -64,10 +64,10 @@ def build_firefox_devtools_server(
 
     command = resolve_bin("firefox-devtools-mcp-moz")
     if enable_privileged_context:
-        return McpStdioServerConfig(
+        return StdioServer(
             command=command, args=args, env={"MOZ_REMOTE_ALLOW_SYSTEM_ACCESS": "1"}
         )
-    return McpStdioServerConfig(command=command, args=args)
+    return StdioServer(command=command, args=args)
 
 
 def build_chrome_devtools_server(
@@ -75,7 +75,7 @@ def build_chrome_devtools_server(
     *,
     headless: bool = True,
     no_sandbox: bool = True,
-) -> McpStdioServerConfig:
+) -> StdioServer:
     """Build the stdio config for the Chrome DevTools MCP server.
 
     Args:
@@ -102,4 +102,4 @@ def build_chrome_devtools_server(
     if no_sandbox:
         args += ["--chromeArg=--no-sandbox", "--chromeArg=--disable-setuid-sandbox"]
 
-    return McpStdioServerConfig(command=resolve_bin("chrome-devtools-mcp"), args=args)
+    return StdioServer(command=resolve_bin("chrome-devtools-mcp"), args=args)

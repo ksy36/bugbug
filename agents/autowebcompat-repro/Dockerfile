@@ -53,6 +53,11 @@ COPY agents/autowebcompat-repro/package.json \
      /app/node/
 RUN cd /app/node && npm ci --omit=dev
 
+# The agent-loop engines ship their own CLI/app-server binaries with their
+# Python SDKs, installed into /opt/venv above: the `claude` CLI via
+# claude-agent-sdk (default backend) and the `codex app-server` via
+# openai-codex (the codex backend, selected with the `backend` input).
+
 # hackbot.toml lives at the agent root (not inside the package), so copy it into
 # the working dir; the runtime discovers it there (cwd) at startup.
 COPY agents/autowebcompat-repro/hackbot.toml /app/hackbot.toml
