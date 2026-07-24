@@ -21,6 +21,11 @@ services:
       - BUG_ID
       - BUGZILLA_MCP_URL=http://autowebcompat-diagnosis-broker:8765/mcp
       - BACKEND
+      # Optional overrides for whichever backend is selected. MODEL is the
+      # model id (e.g. claude-opus-4-8, or gpt-5.5 for codex); EFFORT is the
+      # reasoning effort. Unset -> the backend's own default.
+      - MODEL
+      - EFFORT
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?error}
       # Needed only for the codex backend (BACKEND=codex); optional otherwise so
       # the default claude path runs without an OpenAI key present.

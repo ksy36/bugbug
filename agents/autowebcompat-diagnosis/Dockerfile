@@ -47,11 +47,15 @@ RUN apt-get update \
         fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Install the DevTools MCP servers from the pinned package.json/lockfile
+# Install the DevTools MCP servers + puppeteer from the pinned
+# package.json/lockfile. PUPPETEER_SKIP_DOWNLOAD stops puppeteer's install
+# script from fetching its own browser: the agent drives the runtime-downloaded
+# Firefox/Chrome binaries (mozdownload / Chrome for Testing) via executablePath,
+# so a puppeteer-managed browser would only bloat the image.
 COPY agents/autowebcompat-diagnosis/package.json \
      agents/autowebcompat-diagnosis/package-lock.json \
      /app/node/
-RUN cd /app/node && npm ci --omit=dev
+RUN cd /app/node && PUPPETEER_SKIP_DOWNLOAD=1 npm ci --omit=dev
 
 # The agent-loop engines ship their own CLI/app-server binaries with their
 # Python SDKs, installed into /opt/venv above: the `claude` CLI via

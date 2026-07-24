@@ -44,20 +44,64 @@ class ResultCollector(Generic[ResultT]):
         self.result: ResultT | None = None
 
 
-class DiagnosisResult(BaseModel):
-    """Root-cause analysis the agent produces for a web-compat issue.
+class ReproductionResult(BaseModel):
+    """Result of task 1: reproduce the issue and capture a Puppeteer script.
 
-    The diagnosis task drives both Firefox and Chrome in a single context so it
-    can compare their behaviour and attribute the difference. This result is
-    analysis only: no fix, patch, or recorded action.
+    Handed to the diagnosis task as its starting evidence.
     """
 
     reproduced: bool = Field(
         description=(
             "Whether the reported broken behaviour was observed in Firefox "
-            "during the investigation."
+            "during the reproduction."
         ),
     )
+
+    summary: str = Field(
+        description=(
+            "A concise account of what was reproduced and the observable "
+            "difference between Firefox and Chrome."
+        ),
+    )
+
+    firefox_findings: str = Field(
+        description=(
+            "What you observed in Firefox against the real site: the concrete "
+            "symptoms and the console / network / DOM evidence behind them."
+        ),
+    )
+
+    chrome_findings: str = Field(
+        description=(
+            "What you observed in Chrome running the same steps: whether the "
+            "behaviour differs, and the evidence for the difference."
+        ),
+    )
+
+    script_verified: bool = Field(
+        description=(
+            "Whether the Puppeteer script was written AND run successfully and "
+            "demonstrated the Firefox/Chrome difference. Set false if the script "
+            "could not be made to reproduce the difference."
+        ),
+    )
+
+    steps: str = Field(
+        description=(
+            "The ordered steps you took to reproduce, as a single numbered list "
+            "(1., 2., 3., ... one per line), self-contained enough that another "
+            "agent could repeat them. State the exact origin of any input or "
+            "artifact the report did not provide."
+        ),
+    )
+
+
+class DiagnosisResult(BaseModel):
+    """Root-cause analysis the agent produces for a web-compat issue.
+
+    Produced by task 2 from the reproduction findings + verified Puppeteer
+    script. Analysis only: no fix, patch, or recorded action.
+    """
 
     root_cause: str = Field(
         description=(
@@ -118,14 +162,24 @@ class DiagnosisResult(BaseModel):
         ),
     )
 
-    # Populated by the runtime after the run from the published test-case
-    # artifact — not something the agent submits. Kept out of the tool's
-    # required inputs via its default.
+    # The following are populated by the runtime after the pipeline, not by the
+    # agent — their defaults keep them out of the tool's required inputs.
+    reproduced: bool = Field(
+        default=False,
+        description="Leave unset. Carried over from the reproduction step.",
+    )
     testcase_url: str | None = Field(
         default=None,
         description=(
             "Leave unset. The runtime fills this with the URL of the reduced "
             "test case it published."
+        ),
+    )
+    puppeteer_script_url: str | None = Field(
+        default=None,
+        description=(
+            "Leave unset. The runtime fills this with the URL of the Puppeteer "
+            "reproduction script published from the reproduction step."
         ),
     )
 
