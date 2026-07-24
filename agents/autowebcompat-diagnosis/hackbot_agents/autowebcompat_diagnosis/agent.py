@@ -72,13 +72,16 @@ class BugIdInput:
 @dataclass
 class BugDataInput:
     bug_data: str
+    # Optional source bug id, used only to name artifacts (e.g. in batch mode
+    # where each entry carries its id). Does not trigger a Bugzilla fetch.
+    bug_id: int | None = None
     type: Literal["bug_data"] = "bug_data"
 
     def subject(self) -> str:
-        return self.bug_data
+        return f"bug {self.bug_id}" if self.bug_id is not None else self.bug_data
 
     def slug(self) -> str:
-        return "inline"
+        return str(self.bug_id) if self.bug_id is not None else "inline"
 
 
 AutoWebcompatInput = BugIdInput | BugDataInput
@@ -420,20 +423,25 @@ async def run_autowebcompat_diagnosis(
     input_data: AutoWebcompatInput,
     bugzilla_mcp_server: HttpServer,
     publish_file: PublishFile,
+    firefox_path: Path | None = None,
+    chrome_path: Path | None = None,
 ) -> tuple[DiagnosisResult, RunStats]:
     """Run the reproduction -> diagnosis pipeline for a web-compat issue.
 
-    Installs Firefox (stable) and Chrome at runtime and drives both through
-    their DevTools MCP servers. Task 1 reproduces the issue and produces a
-    verified Puppeteer script; task 2 diagnoses the root cause and writes a
-    reduced HTML test case. The script and test case are published via
-    ``publish_file`` and their URLs recorded on the diagnosis result. Raises
-    :class:`AgentError` on failure.
+    Drives Firefox (stable) and Chrome through their DevTools MCP servers. Task
+    1 reproduces the issue and produces a verified Puppeteer script; task 2
+    diagnoses the root cause and writes a reduced HTML test case. The script and
+    test case are published via ``publish_file`` and their URLs recorded on the
+    diagnosis result.
+
+    ``firefox_path``/``chrome_path`` let a caller install the browsers once and
+    reuse them across many bugs (batch mode). When omitted, both are downloaded
+    here. Raises :class:`AgentError` on failure.
     """
-    firefox_browser = FirefoxBrowsers()
-    chrome_browser = ChromeBrowsers()
-    firefox_path = firefox_browser.stable
-    chrome_path = chrome_browser.stable
+    if firefox_path is None:
+        firefox_path = FirefoxBrowsers().stable
+    if chrome_path is None:
+        chrome_path = ChromeBrowsers().stable
 
     artifacts_dir = Path(tempfile.mkdtemp(prefix="autowebcompat-diagnosis-"))
     stem = f"{input_data.slug()}-{model_slug(config.model)}"

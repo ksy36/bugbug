@@ -1,0 +1,17 @@
+[
+  {
+    "id": 2053077,
+    "summary": "www.jobs.abbott - OTP entry fields appear as drop-downs",
+    "description": "Created attachment 9605024\nOPT input field issue Nightly vs Chrome\n\n**Environment:**\nOperating system: Windows\nFirefox version: Firefox 152.0.1 (release) / Firefox Nightly 154.0a1 (2026-07-06)\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://www.jobs.abbott/us/en/apply?jobSeqNo=ABLAUS31152679ENUSEXTERNAL&step=1&stepname=applicantAcknowledgment\n2. Enter an email address (e.g \"test34@mail.com\") in the Email input field\n3. Click the \"Get OPT\" button\n4. Observe the OPT entry fields \n\n**Expected Behavior:**\nThe OPT entry fields are rendered accordingly and the introduced numbers are displayed accordingly\n\n**Actual Behavior:**\nOTP entry fields appear as drop-downs and the introduced numbers are not displayed \n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:5bc4b5d1-a4ff-4f71-b4a0-5dbc064605b2"
+  },
+  {
+    "id": 2040305,
+    "summary": "www.centuryasia.com.tw - \"Member Login\" pop-up window fails to load",
+    "description": "Created attachment 9587194\n\"Member Login\" pop-up window Nightly vs Chrome\n\n**Environment:**\nOperating system: Windows\nFirefox version: Firefox 150.0.3 (release) / Firefox Nightly 152.0a1 (2026-05-17) \n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://www.centuryasia.com.tw/login.html?obj=l&obj1=i&ver=I+DfKKUJFcA=#login\n2. Notice the missing  \"Member Login\" pop-up window\n3. Click \"Member Login\" button\n4. Observe the page\n\n**Expected Behavior:**\n\"Member Login\" pop-up window is displayed accordingly on page load and when clicking the \"Member Login\" button\n\n**Actual Behavior:**\n\"Member Login\" pop-up window fails to load on page load and when clicking the \"Member Login\" button\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:91450d12-f07b-4676-91f4-626b6ccc7980"
+  },
+  {
+    "id": 2052489,
+    "summary": "drmeth.com - Layout is broken, elements are overlapped and not scaled properly in the center of the page",
+    "description": "Created attachment 9604208\nimage.png\n\n**Environment:**\nOperating system: Linux/Windows 10\nFirefox version: Firefox 136.0 (release)/152/154\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://drmeth.com/\n2. Observe the page.\n\n**Expected Behavior:**\nThe elements are displayed correctly.\n\n**Actual Behavior:**\nElements are overlapped and not scaled properly in the center of the page.\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:46454e87-7689-4b88-943a-8f163859539d"
+  }
+]

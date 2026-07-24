@@ -19,6 +19,11 @@ services:
       - RUN_ID
       - BUG_DATA
       - BUG_ID
+      # Batch mode: set BUGS_FILE_HOST=/host/path/bugs.json on the host; it is
+      # mounted read-only at /bugs.json and BUGS_FILE is set so the agent reads
+      # it. Leave BUGS_FILE_HOST unset for single-bug runs (BUGS_FILE stays
+      # empty -> batch mode off).
+      - BUGS_FILE=${BUGS_FILE_HOST:+/bugs.json}
       - BUGZILLA_MCP_URL=http://autowebcompat-diagnosis-broker:8765/mcp
       - BACKEND
       # Optional overrides for whichever backend is selected. MODEL is the
@@ -35,6 +40,10 @@ services:
       - ARTIFACTS_DIR=/artifacts
     volumes:
       - ${HOME}/hackbot/artifacts:/artifacts
+      # Batch bugs file, mounted read-only. Defaults to /dev/null when
+      # BUGS_FILE_HOST is unset, which is harmless because BUGS_FILE is then
+      # empty and the agent runs in single-bug mode.
+      - ${BUGS_FILE_HOST:-/dev/null}:/bugs.json:ro
     depends_on:
       autowebcompat-diagnosis-broker:
         condition: service_started

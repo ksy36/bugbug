@@ -1,0 +1,242 @@
+[
+  {
+    "id": 2044288,
+    "summary": "www.kuaishou.com - Missing video thumbnails for some video sections",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 151.0\n\n**Steps to reproduce:**\n1. Navigate to: https://www.kuaishou.com/?isHome=1&source=NewReco\n2. Scroll and observe\n\n**Expected Behavior:**\nVideo thumbnails are present\n\n**Actual Behavior:**\nVideo thumbnails are missing\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/222893"
+  },
+  {
+    "id": 1976838,
+    "summary": "www.acuenta.cl - Slow page load, becomes unresponsive",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 140.0/142\n\n**Steps to reproduce:**\n1. Go to https://www.acuenta.cl\n2. Scroll down the page.\n\n**Expected Behavior:**\nThe page loads in reasonable time and doesn't present notable performance issues.\n\n**Actual Behavior:**\nThe page loads slow and while scrolling the content is stuck loading and the page eventually slows down the browser.\n\n**Notes:**\n- **Performance profile:** https://share.firefox.dev/4lpg3VG\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/165991"
+  },
+  {
+    "id": 2044339,
+    "summary": "www.jw.org - Video fails to play throwing an error message",
+    "description": "**Environment:**\nOperating system: Linux and Windows\nFirefox version: Firefox 151.0.1 (release)\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://www.jw.org/es/biblioteca/videos/#es/mediaitems/VODPgmEvtMorningWorship/pub-jwb_201803_7_VIDEO\n2. Dismiss the cookie policy\n3. Click on the \"Play\" button located in the video placeholder and observe\n\n**Expected Behavior:**\nThe video plays\n\n**Actual Behavior:**\nError message displayed\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:f9d5ff99-73a2-4cf4-b060-4d22edab8e2d"
+  },
+  {
+    "id": 2029349,
+    "summary": "www.keter.com - Contact form doesn't load",
+    "description": "Steps to reproduce:\n1. Visit https://www.keter.com/fr-fr/nous-contacter.html\n2. Wait.\n\nActual results:\nIn Firefox, the page never finishes loading, and the contact form is never displayed. Only the logo placeholder is visible.\n\nExpected results:\nA contact form is displayed.\n\nAdditional context:\nReproduces in Firefox on the latest release (v149) and Nightly (v151) regardless of ETP status. Reproduces in Firefox for Android. Does NOT reproduce in Edge (desktop) or Chrome (Android)."
+  },
+  {
+    "id": 2026607,
+    "summary": "etoland.co.kr - Video format not supported",
+    "description": "**Environment:**\nOperating system: Windows 11/10\nFirefox version: 148.0.2 (64-비트)/149/151\n\n**Steps to reproduce:**\n1. Go to https://etoland.co.kr/bbs/board.php?bo_table=star02&wr_id=808583\n2. Observe the videos.\n\n**Expected Behavior:**\nThe videos play/can be played.\n\n**Actual Behavior:**\nUnsupported format displayed, unable to play them.\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/211936"
+  },
+  {
+    "id": 2021850,
+    "summary": "aladhan.com - Calendar is not generated as the \"Generate\" button does nothing",
+    "description": "**Environment:**\nOperating system: Linux and Windows 10\nFirefox version: Firefox 148.0\n\n**Steps to reproduce:**\n1. Navigate to: https://aladhan.com/calendar\n2. Input \"London, UK\" in the location field\n3. Click on \"Generate calendar\"\n4. Scroll and observe\n\n**Expected Behavior:**\nDates are generated\n\n**Actual Behavior:**\nNothing happens\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/211196"
+  },
+  {
+    "id": 1985718,
+    "summary": "www.lamaniec.pl - The keyboard does not fit on the screen",
+    "description": "**Environment:**\nOperating system: Android 16\nFirefox version: Firefox Mobile 142.0\n\n**Preconditions:**\nClean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://www.lamaniec.pl/szarada/\n2. Scroll down\n3. Observe\n\n**Expected Behavior:**\nThe keyboard is displayed correctly\n\n**Actual Behavior:**\nThe keyboard does not fit on the screen\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/173801"
+  },
+  {
+    "id": 2040305,
+    "summary": "www.centuryasia.com.tw - \"Member Login\" pop-up window fails to load",
+    "description": "Created attachment 9587194\n\"Member Login\" pop-up window Nightly vs Chrome\n\n**Environment:**\nOperating system: Windows\nFirefox version: Firefox 150.0.3 (release) / Firefox Nightly 152.0a1 (2026-05-17) \n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://www.centuryasia.com.tw/login.html?obj=l&obj1=i&ver=I+DfKKUJFcA=#login\n2. Notice the missing  \"Member Login\" pop-up window\n3. Click \"Member Login\" button\n4. Observe the page\n\n**Expected Behavior:**\n\"Member Login\" pop-up window is displayed accordingly on page load and when clicking the \"Member Login\" button\n\n**Actual Behavior:**\n\"Member Login\" pop-up window fails to load on page load and when clicking the \"Member Login\" button\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:91450d12-f07b-4676-91f4-626b6ccc7980"
+  },
+  {
+    "id": 1957422,
+    "summary": "Lidl LiA Assistant - Support chat does not load completely, unable to send messages",
+    "description": "**Environment:**\nOperating system: Android 13/Windows 10\nFirefox version: Firefox 136.0/138\n\n**Steps to reproduce:**\n1. Go to https://assistenza-clienti.lidl.it/SelfServiceIT/s/?initChatbot=true\n2. Click on \"CONTINUA\" inside the chat window.\n3. Type something and try to send the message.\n\n**Expected Behavior:**\nThe chat window loads completely and the messages can be sent.\n\n**Actual Behavior:**\nThe chat windows does not load completely and the messages cannot be sent.\n\n**Notes:**\n- **Reproduces on both Mobile and Desktop**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/150440"
+  },
+  {
+    "id": 2023995,
+    "summary": "www.mercedes-benz.fi - user manuals are not loaded",
+    "description": "**Environment:**\nOperating system: All\nFirefox version: Firefox 148.0 (release)\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://www.mercedes-benz.fi/services/manuals/\n2. Observe the page\n\n**Expected Behavior:**\nManuals are loaded\n\n**Actual Behavior:**\nPage content is empty\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:79a1f430-e0a6-4d81-8062-fad5e7396384\n\nReports: \n-  Page content (the actual manuals) are not loading, even after disabling adblocking and enhanced tracking protection. Only page header and footer are visible. Works with Chrome on Android.\n- User guides cannot be selected in Firefox."
+  },
+  {
+    "id": 2022787,
+    "summary": "www.oechsle.pe - The bottom part of the Checkout page is continuously reloads itself",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 148.0 / Firefox Nightly 150a1 (2026-03-11)\n\n**Preconditions:**\nAdd any item to your cart\n\n**Steps to reproduce:**\n1. Access: https://www.oechsle.pe/checkout#/cart\n2. Observe the page\n\n**Expected Behavior:**\nThe page is loaded accordingly\n\n**Actual Behavior:**\n\"To complete your purchase\" and \"Add it to your purchase\" parts of the page continuously reload\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/211691"
+  },
+  {
+    "id": 2003458,
+    "summary": "www.digitaling.com - The site continuously reloads, alternating between mobile and desktop views",
+    "description": "**Environment:**\nOperating System: Samsung A51 (Android 11) -1080 × 2400 pixels 20:9 aspect ratio (~405 ppi density)\nFirefox version: Firefox Nightly 147.0a1 Build #2016129055\n\n**Steps to reproduce:**\n1. Access: https://www.digitaling.com/articles/1217593.html\n2. Observe the page\n\n**Expected Behavior:**\nThe page is loaded correctly in mobile view\n\n**Actual Behavior:**\nThe site continuously reloads, alternating between mobile and desktop views\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/192671"
+  },
+  {
+    "id": 2004408,
+    "summary": "coursera.org - Issues with the pop-up menu on Coursera",
+    "description": "User Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0\n\nSteps to reproduce:\n\n1. Go to https://www.coursera.org/partners/umich\n2. Scroll down to about the middle of the page\n3. Place your mouse over \"Explore\"\n\n\nActual results:\n\nThe pop-up menu with \"Explore roles\", \"Explore categories\", \"Get a professional certificate\", etc. is not displayed.\n\n\nExpected results:\n\nThe pop-up menu with \"Explore roles\", \"Explore categories\", \"Get a professional certificate\", etc. is displayed."
+  },
+  {
+    "id": 2028875,
+    "summary": "swagtime.net -  Blank page is loaded",
+    "description": "Created attachment 9563627\nBlank page Nightly vs Chrome\n\n**Environment:**\nOperating system: Windows\nFirefox version: Firefox 148.0.2 (release) / Firefox Nightly 151.0a1 (2026-04-02)\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://swagtime.net/\n2. Observe the page\n\n**Expected Behavior:**\nThe page loads accordingly\n\n**Actual Behavior:**\nBlank page is loaded\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:b8909a52-1411-4f29-b7d6-27abd4f0955b"
+  },
+  {
+    "id": 1977185,
+    "summary": "ext-webbgis.lansstyrelsen.se - The map fails to render after zooming in and out",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 142.0\n\n**Steps to reproduce:**\n1. Navigate to: https://ext-webbgis.lansstyrelsen.se/lst_reservatskartan_helskarm/\n2. Zoom the page in and out using the mouse wheel\n3. Observe\n\n**Expected Behavior:**\nThe map renders\n\n**Actual Behavior:**\nGrey page\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/166634"
+  },
+  {
+    "id": 1934539,
+    "summary": "zeeromed.cloud - Firefox is not a supported browser",
+    "description": "**Environment:**\nOperating system: Linux / Windows 10\nFirefox version: Firefox 132.0 (release)/133/135\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://ris.radiologiacervignanese.zeeromed.cloud/\n2. Observe the page.\n\n**Expected Behavior:**\nThe sign in page is displayed.\n\n**Actual Behavior:**\nUnsupported page is displayed.\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:592370b1-6dc8-481f-afd5-0598b3b06c0e"
+  },
+  {
+    "id": 1980544,
+    "summary": "camtasia.ai - Unsupported browser",
+    "description": "Shows:\n\n> This browser isn’t supported.\n> \n> Supported Browsers:\n> Google Chrome | Microsoft Edge\n\nSeems to work with Chrome Mask but if I paste a screenshot I get \"Failed to process pasted image\". That error appears to come from `luma.js` \n\nAnother of their proprerties—https://camtasia.techsmith.com/app—(requires login) also reports \"Unsupported browser\" (although it lists Safari as supported) but doesn't work even with Chrome Mask, i.e. still shows unsupported browser."
+  },
+  {
+    "id": 1937727,
+    "summary": "support.usa.canon.com - Firefox is not supported when searching for products in the knowledge base",
+    "description": "**Environment:**\nOperating system: Mac OS X 13.6\nFirefox version: Firefox 133.0.3\n\n**Steps to reproduce:**\n1. Navigate to: https://support.usa.canon.com/kb/s/\n2. Type any words inside the search bar and hit enter\n3. Observe\n\n**Expected Behavior:**\nThe page returns search results\n\n**Actual Behavior:**\nBrowser unsupported\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/145285"
+  },
+  {
+    "id": 2034034,
+    "summary": "www.bambinieautismo.org - Navigation menu (hamburger icon) becomes unresponsive after page reload",
+    "description": "**Environment:**\nOperating system: Android 11 / Windows 10\nFirefox version: Firefox 149.0 / Firefox Nightly 152.0a1  Build #2016156511\n\n**Steps to reproduce:**\n1. Access: https://www.bambinieautismo.org/\n2. Select the hamburger menu icon\n3. Notice, that the menu items are displayed accordingly\n4. Reload the page\n5. Select the hamburger menu icon again\n6. Observe the page\n\n**Expected Behavior:**\nThe menu items are displayed accordingly\n\n**Actual Behavior:**\nNavigation menu (hamburger icon) becomes unresponsive and the menu items are not displayed\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/216928"
+  },
+  {
+    "id": 2044337,
+    "summary": "www.okini.net - Error message displayed when attemtping to load the page",
+    "description": "**Environment:**\nOperating system: Windows\nFirefox version: Firefox 151.0.1 (release)\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://www.okini.net/\n2. Observe\n\n**Expected Behavior:**\nThe page loads\n\n**Actual Behavior:**\n\"Sorry, that's an error\" message displayed\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:65a2425f-9250-43e8-b087-08d93fa84d0d"
+  },
+  {
+    "id": 1998778,
+    "summary": "CIBC online video meetings reject Firefox",
+    "description": "I had an actual meeting with valid ID earlier today with CIBC and I could only use Chrome to attend it. It seems it specifies the same message without a meeting ID as it does with, so hopefully that is sufficient to debug this.\n\nVisit https://collaboration.cibc.com/. Firefox gets an unsupported page, Chrome gets an invalid meeting page (but went to the actual meeting for me). Not sure what it is using to feature detect."
+  },
+  {
+    "id": 1999490,
+    "summary": "demo.paw.wolffaud.io - Firefox is not a supported browser",
+    "description": "**Environment:**\nOperating system: Mac OS X 10.15 and Windows 10\nFirefox version: Firefox 144.0\n\n**Steps to reproduce:**\n1. Navigate to: https://demo.paw.wolffaud.io/upstage.html\n2. Observe\n\n**Expected Behavior:**\nThe page loads\n\n**Actual Behavior:**\nThe page supports only modern Chromium browsers message displayed\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/188148"
+  },
+  {
+    "id": 1979009,
+    "summary": "www.waikanae.bridge-club.org - Table with results is not loading",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 142.0\n\n**Steps to reproduce:**\n1. Navigate to: https://www.waikanae.bridge-club.org/results\n2. Observe\n\n**Expected Behavior:**\nThe table with results loads\n\n**Actual Behavior:**\nThe table is missing\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/168316"
+  },
+  {
+    "id": 1924472,
+    "summary": "dl.cuscatlanmyrewards.com - The page is not displayed",
+    "description": "**Environment:**\nOperating system: Android 14\nFirefox version: Firefox Mobile 133.0\n\n**Preconditions:**\nClean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://dl.cuscatlanmyrewards.com/openappmc/?content=YzM2NTRlMTM4OWRlNDkwNWEwY2M0NjBiYWQ2YTQ1ZjM====ZWpueTFHSzY0U0UreVZ3d1ZNNXk0SloxS0tMS0tZelNaUGQ2ak1RelJBTENxb29MUzFMWDZ2dmw3ZjNBdGtzNU9pQmVLbjI5c1J2NmIxY0NjMzh3Kys4MXU4dUYvVmVHbURRQzltbHBoL0s0WU1SWmJOUHF5cjVGMTdhSXAvU2hhaXhiN2xuTTBYdFEvL3R1NCs3NlZnPT0=\n2. Observe\n\n**Expected Behavior:**\nThe page is displayed\n\n**Actual Behavior:**\nThe page is not displayed\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in Firefox Nightly, and Firefox Release\n- Does not reproduce in Chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/142702"
+  },
+  {
+    "id": 2022287,
+    "summary": "perspective-dev.github.io - \"All columns\" list does not show all the entries",
+    "description": "**Environment:**\nOperating system: Mac OS X 10.15 and Windows 10\nFirefox version: Firefox 148.0\n\n**Steps to reproduce:**\n1. Navigate to: https://perspective-dev.github.io/block/?example=covid\n2. Locate the \"All columns\" section and scroll\n\n**Expected Behavior:**\nAll columns entries are shown\n\n**Actual Behavior:**\nMissing column entries\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/211485"
+  },
+  {
+    "id": 1965783,
+    "summary": "adguard.com - Does not scroll all the way to the anchor",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 138/140\n\n**Steps to reproduce:**\n1. Go to https://adguard.com/kb/general/ad-filtering/create-own-filters/#cosmetic-rule\n2. Observe the page.\n\n**Expected Behavior:**\nPage gets scrolled to cosmetic rule section.\n\n**Actual Behavior:**\nDoes not get scrolled all the way to the anchor, scrolling down is still needed.\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/153987"
+  },
+  {
+    "id": 2024317,
+    "summary": "www.dbs-cardgame.com - When trying to see the back of the card, the front gets mirrored instead",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 148.0/150\n\n**Steps to reproduce:**\n1. Go to https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583009#cards-1\n2. Click on \"Show the BACK\".\n3. Observe the behavior.\n\n**Expected Behavior:**\nIt shows the back of the card.\n\n**Actual Behavior:**\nShows a mirrored version of the front card.\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/211977"
+  },
+  {
+    "id": 2030047,
+    "summary": "megalodon.jp - The image resolution is smaller compared to other browsers",
+    "description": "Created attachment 9566989\nChr vs ff\n\n**Environment:**\nOperating system: Windows\nFirefox version: Firefox 149.0 (release)\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://megalodon.jp/2026-0325-1010-37/https://rts-pctr.c.yimg.jp:443/BgIFgYJGVIVv8u0nVJvw8B2FauAYMF4jOP5zFJAV4i6hjVpND1OjWZ7RVcmujne-fZ2IXx-V227rbVJq141J8h7n3BzVX-ehUvDUVRHhv1dd_8I0jUKvY_nk2o9EDlOvM5Fh5sHf8BkJWWeNkt61Yut8hvA4JLQw-UNgMxyxETbg01C8csRar-S4ajJe9BI31G7gO0xPHnZfXaCVjwi2jQ==\n2. Observe\n\n**Expected Behavior:**\nThe image resolution is low\n\n**Actual Behavior:**\nThe image resolution is big\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:e27fc19a-2bfa-427d-8341-548504df8ed7"
+  },
+  {
+    "id": 2013047,
+    "summary": "anime-japan.jp - Header logo area is broken causing layout issues within the header",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 147.0\n\n**Steps to reproduce:**\n1. Navigate to: https://anime-japan.jp/\n2. Observe the header area\n\n**Expected Behavior:**\nLogo is missing and area is stretched\n\n**Actual Behavior:**\nLogo is present\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/203920"
+  },
+  {
+    "id": 2009389,
+    "summary": "anyto.imyfone.com - The \"Table of Contents\" covers the whole page",
+    "description": "**Environment:**\nOperating system: Android 12\nFirefox version: Firefox Mobile 146.0/148\n\n**Steps to reproduce:**\n1. Go to https://anyto.imyfone.com/pokemon-go/how-to-hatch-eggs-in-pokemon-go-without-walking/\n2. Observe the page.\n\n**Expected Behavior:**\nThe page is visible and the \"Table of Contents\" button is rendered correctly.\n\n**Actual Behavior:**\nThe \"Table of Contents\" button covers the whole page.\n\n**Notes:**\n- Does not reproduce on Desktop\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/199421"
+  },
+  {
+    "id": 1952830,
+    "summary": "www.kuukalenteri.fi - Icons are misaligned inside the monthly tables",
+    "description": "**Environment:**\nOperating system: Android 15\nFirefox version: Firefox Mobile 136.0\n\n**Steps to reproduce:**\n1. Navigate to: https://www.kuukalenteri.fi/2025\n2. Observe the moon phases inside the dates table\n\n**Expected Behavior:**\nItems are correctly aligned\n\n**Actual Behavior:**\nItems are misaligned, overlapping other entries\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/150035"
+  },
+  {
+    "id": 2010760,
+    "summary": "www.matriklen.dk - The red arrow is misaligned on the page",
+    "description": "**Environment:**\nOperating system: Windows 10 / Android 11\nFirefox version: Firefox Nightly 149.0a1 (2026-01-15)\n\n**Steps to reproduce:**\n1. Access: https://www.matriklen.dk/#/installer\n2. Select the OS and Browser\n3. Observe the alignment on page\n\n**Expected Behavior:**\nThe page is displayed accordingly\n\n**Actual Behavior:**\nThe red arrow is misaligned\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/201149"
+  },
+  {
+    "id": 1780182,
+    "summary": "Gucci Grip game doesn't load",
+    "description": "**Note**\n* This issue is reproducible only on Windows 7\n\n**Found in**\n* Firefox 103.0\n\n**Affected versions**\n* 103.0\n\n**Affected platforms**\n* Windows 7\n\n**Steps to reproduce**\n1. Open Firefox\n2. Go to https://guccigrip.gucci.com/\n\n**Expected result**\n* The game from the above site should be rendered\n\n**Actual result**\n*  A message \"Gucci Grip\" loading is displayed. The game is not rendered.\n\n**Regression range**\n* No regression"
+  },
+  {
+    "id": 2011185,
+    "summary": "www.welovesocks.it - The page jitters when scrolling is performed",
+    "description": "**Environment:**\nOperating system: Android 16\nFirefox version: Firefox Mobile 147.0\n\n**Steps to reproduce:**\n1. Navigate to: https://www.welovesocks.it/#\n2. Dismiss the banners\n3. Scroll and observe\n\n**Expected Behavior:**\nPage scrolls\n\n**Actual Behavior:**\nPage jitters\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/202492"
+  },
+  {
+    "id": 1997257,
+    "summary": "www.ponyparkcity.nl - Buttons and links are not responding to user interactions",
+    "description": "**Environment:**\nOperating system: Android 16\nFirefox version: Firefox Mobile 144.0\n\n**Steps to reproduce:**\n1. Access: https://www.ponyparkcity.nl/en/\n2. Tap on any buttons and observe\n\n**Expected Behavior:**\nButtons and links respond\n\n**Actual Behavior:**\nButtons or links not working\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/185540"
+  },
+  {
+    "id": 2029563,
+    "summary": "shop.fratellilunardi.it - The page header rendering is broken causing issues",
+    "description": "**Environment:**\nOperating system: Android 10\nFirefox version: Firefox Mobile 151.0\n\n**Steps to reproduce:**\n1. Navigate to: https://shop.fratellilunardi.it/it/\n2. Observe\n\n**Expected Behavior:**\nNo layout issues are present\n\n**Actual Behavior:**\nThe header on the top uses almost half the weight of the screen, cannot tap the menu button to navigate the shop\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/215100"
+  },
+  {
+    "id": 1973725,
+    "summary": "vanjapavlovicbirthdayboy.wordpress.com - Content is not fully visible",
+    "description": "**Environment:**\nOperating system: Android 15\nFirefox version: Firefox Mobile 139.0/141\n\n**Steps to reproduce:**\n1. Go to https://vanjapavlovicbirthdayboy.wordpress.com/\n2. Observe the page.\n\n**Expected Behavior:**\nThe content is fully visible.\n\n**Actual Behavior:**\nThe content appears cut off.\n\n**Notes:**\n- Appears correctly when changing orientation to Landscape\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/160352"
+  },
+  {
+    "id": 2035513,
+    "summary": "hub.eweadn.cn - Pop-up to select device is not triggered",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 140.0\n\n**Steps to reproduce:**\n1. Navigate to: https://hub.eweadn.cn/#/\n2. Click on the \"Initialize Device\" button\n3. Click on the \"Allow Browser Access\" button and observe\n\n**Expected Behavior:**\nPop-up to identify and select device is triggered\n\n**Actual Behavior:**\nNothing happens\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/218238"
+  },
+  {
+    "id": 2028847,
+    "summary": "www.pro-xpel.com.my - Page scroll position resets to top during scrolling",
+    "description": "Created attachment 9563572\nScroll issue Nightly vs Chrome\n\n**Environment:**\nOperating system: Windows\nFirefox version: Firefox 149.0 (release) / Firefox Nightly 151.0a1 (2026-04-02)\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://www.pro-xpel.com.my/\n2. Scroll down the page\n\n**Expected Behavior:**\nThe scroll functionality is working accordingly\n\n**Actual Behavior:**\nPage scroll position resets to top during scrolling, preventing the user from navigating the page\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:4aafed43-c4f6-4114-9b82-141e4ec63562"
+  },
+  {
+    "id": 1997879,
+    "summary": "blackship.com - Burger menu button does not work",
+    "description": "**Environment:**\nOperating system: Android 15\nFirefox version: Firefox Mobile 144.0/146\n\n**Steps to reproduce:**\n1. Go to https://blackship.com/\n2. Tap on the burger menu.\n\n**Expected Behavior:**\nThe menu gets shown.\n\n**Actual Behavior:**\nNothing happens.\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/186266"
+  },
+  {
+    "id": 1964927,
+    "summary": "www.trans-o-flex.com - \"SENDUNG SUCHEN +\" button is not fully visible and does not work",
+    "description": "**Environment:**\nOperating system: Android 14\nFirefox version: Firefox Mobile 137.0/140\n\n**Steps to reproduce:**\n1. Go to https://www.trans-o-flex.com/sendungsverfolgung/login\n2. Tap on the back arrow \"WEITER OHNE ANMELDUNG\" located at the top of the screen.\n3. Observe the button at the top of the screen.\n\n**Expected Behavior:**\nThe button is visible and interacts when tapped.\n\n**Actual Behavior:**\nThe button is not fully visible and does not interact when tapped.\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/153723"
+  },
+  {
+    "id": 1937723,
+    "summary": "www.zittauer-schmalspurbahn.de - The site does not update when refreshing the page",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: ALL Versions later / after Firefox 99.0\n\n**Steps to reproduce:**\n1. Navigate to: https://www.zittauer-schmalspurbahn.de/webcam/picbertsdorf/Still/073003_SNCPeriodic.jpg\n2. Refresh the page\n3. Wait for a minute or two\n4. Refresh the page again and observe the time stamp\n\n**Expected Behavior:**\nThe picture is updated every minute\n\n**Actual Behavior:**\nThe picture does not update\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/145287"
+  },
+  {
+    "id": 2006075,
+    "summary": "pixi.live - gallery pictures are not fully loaded",
+    "description": "**Environment:**\nOperating system: All\nFirefox version: Firefox 144 (release)\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://pixi.live/gallery/opensource-experience-2025\n2. Scroll down a few times and observe the images\n\n**Expected Behavior:**\nImages stop loading eventually and overlap each other\n\n**Actual Behavior:**\nImages loaded and able to scroll to the bottom of the page and few full gallery\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\nReport: \"Hello, I'm encountering a problem that only occurs in Firefox. I don't have this issue with Safari or Chrome. I'm trying to display images in a Masonry grid. When the page loads, everything is fine, but when I start scrolling and the elements load sequentially, it eventually blocks the loading of new images and breaks the layout. The images overlap. I've been able to test this, and when I set a fixed height for the images, the bug disappears. I therefore suspect an issue with variable heights and the Masonry grid. \"\n\nCreated from webcompat-user-report:a42841c6-26b8-4056-921f-d3756398f12a"
+  },
+  {
+    "id": 1916239,
+    "summary": "playit-online.de - The game is stuck in a loading state",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 129.0.2 (release)\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://www.playit-online.de/spiel/monkey-go-happy-stage-868/\n2. Click on \"SPIELEN\" and observe\n\n**Expected Behavior:**\nGame starts\n\n**Actual Behavior:**\nThe game is stuck in a loading state\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:34e6b6ce-4f6e-4f12-9d7c-5f6d04139f9b"
+  },
+  {
+    "id": 2009948,
+    "summary": "www.iismazzocchiumbertoprimo.edu.it - Weather data is not loaded despite accepting the cookie policy",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 146.0\n\n**Steps to reproduce:**\n1. Navigate to: https://www.iismazzocchiumbertoprimo.edu.it/pagine/stazione-meteo-mazzocchi\n2. Accept the cookie policy and observe\n\n**Expected Behavior:**\nData is loading\n\n**Actual Behavior:**\nData fails to load\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/199319"
+  },
+  {
+    "id": 2033758,
+    "summary": "derandmotorsports.com - The primary product image is not displayed",
+    "description": "Created attachment 9572001\nMissing product image Nightly vs Chrome\n\n**Environment:**\nOperating system: Windows\nFirefox version: Firefox 149.0.2 (release) / Firefox Nightly 152.0a1 (2026-04-21\n\n**Preconditions:**\n- Clean profile\n\n**Steps to reproduce:**\n1. Navigate to: https://derandmotorsports.com/collections/for-the-thrill-seekers/products/eunorau-specter-st-2-0\n2. Observe the page\n\n**Expected Behavior:**\nThe primary product image not displayed accordingly\n\n**Actual Behavior:**\nThe primary product image is not displayed\n\n**Notes:**\n- Reproducible on the latest Firefox Release and Nightly\n- Reproducible regardless of the ETP setting\n- Works as expected using Chrome\n\n---\n\nCreated from webcompat-user-report:93f67372-ae59-420c-b168-a81f50b6910e"
+  },
+  {
+    "id": 2037704,
+    "summary": "www.americanexpress.com - \"Your Global Privacy Control opt-out signal has been honored.\" message is displayed on every page",
+    "description": "**Steps to reproduce:**\n1. Have GPC (\"Tell websites not to sell or share my data\") enabled.\n2. Visit https://www.americanexpress.com/.\n3. Browse the site, visiting different pages.\n\n**Expected results:**\nThe \"_Your Global Privacy Control opt-out signal has been honored._\" message is displayed only once (as long as you don't change settings).\n\n**Actual results:**\nThe \"_Your Global Privacy Control opt-out signal has been honored._\" message is displayed on every page, which is kinda irritating.\n\n**Additional context:**\nThis doesn't reproduce in Chrome/Edge because they don't support GPC yet. So it's not an actual webcompat bug, rather a difference, but we might still want to take action because from an end-user perspective, this may look like a Firefox issue."
+  },
+  {
+    "id": 1958462,
+    "summary": "lsh-catering.de - Page elements missing on first load",
+    "description": "**Environment:**\nOperating system: Android 13/Windows 10\nFirefox version: Firefox 136.0/138/139\n\n**Steps to reproduce:**\n1. Go to https://lsh-catering.de/\n2. Scroll down the page below the \"NEWS\" and \"Genuss\" section.\n3. Observe the layout.\n\n**Expected Behavior:**\nThe page is rendered correctly.\n\n**Actual Behavior:**\nSome page elements are missing from some sections.\n\n**Notes:**\n- On mobile it reproduces only on Release but the elements are missing even after refresh, on Beta and Nightly mobile the page elements load even on the first load\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/151643"
+  }
+]
