@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>webcompat 2053077 — number input spinner: appearance:none vs textfield</title>
+<style>
+  /* This mirrors the Abbott careers OTP-widget CSS.
+     Each OTP box is a fixed-width <input type="number">. The site tries to
+     remove the native number spin box so a single digit fits inside 25px.
+
+     It removes the spinner ONLY two ways:
+       - Blink/WebKit: the ::-webkit-inner-spin-button pseudo-element reset
+       - Firefox:      -moz-appearance:none / appearance:none on the input
+
+     KEY DIFFERENCE:
+       In Firefox, appearance:none / -moz-appearance:none does NOT suppress the
+       number spin box. Firefox only drops the spin box for appearance:textfield.
+       So the native up/down spinner REMAINS and — inside the fixed 25px box —
+       fills the entire content area (clientWidth -> 0). The field looks like a
+       drop-down/spinner and typed digits are not visible.
+
+       In Chrome, the ::-webkit-inner-spin-button reset removes the spinner,
+       leaving usable content width (clientWidth > 0) so the digit shows. */
+
+  .otp-field-input {
+    width: 25px !important;
+    height: 30px;
+    box-sizing: border-box;
+    text-align: center;
+    font-size: 16px;
+    border: 1px solid #888;
+    -moz-appearance: none;
+    appearance: none;          /* Firefox: does NOT remove number spinner */
+  }
+  /* Blink/WebKit spinner removal — the only path that actually works */
+  .otp-field-input::-webkit-inner-spin-button,
+  .otp-field-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* Control: appearance:textfield DOES remove the spinner in Firefox. */
+  .otp-fixed {
+    width: 25px !important;
+    height: 30px;
+    box-sizing: border-box;
+    text-align: center;
+    font-size: 16px;
+    border: 1px solid #080;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  body { font-family: sans-serif; }
+  .row { margin: 12px 0; }
+  code { background:#f0f0f0; padding:1px 4px; }
+</style>
+</head>
+<body>
+  <h1>OTP number-input spinner reproduction (bug 2053077)</h1>
+
+  <p><b>Expected:</b> a fixed 25px-wide <code>&lt;input type="number"&gt;</code> should show
+  the typed digit. <b>Firefox differs:</b> with <code>appearance:none</code> the native number
+  spin box is NOT suppressed and fills the box, hiding the digit (looks like a drop-down).
+  Chrome removes the spinner via <code>::-webkit-inner-spin-button</code>, so the digit shows.</p>
+
+  <div class="row">
+    Broken (site CSS — appearance:none):
+    <input class="otp-field-input" id="broken" type="number" value="5">
+  </div>
+
+  <div class="row">
+    Control (appearance:textfield — works in Firefox too):
+    <input class="otp-fixed" id="fixed" type="number" value="5">
+  </div>
+
+  <pre id="out"></pre>
+  <script>
+    function report(id) {
+      var el = document.getElementById(id);
+      var cs = getComputedStyle(el);
+      return id + ': offsetWidth=' + el.offsetWidth +
+        ' clientWidth=' + el.clientWidth +
+        ' scrollWidth=' + el.scrollWidth +
+        ' appearance=' + cs.appearance +
+        ' -moz-appearance=' + cs.getPropertyValue('-moz-appearance');
+    }
+    document.getElementById('out').textContent =
+      report('broken') + '\n' + report('fixed');
+    window.__probe = function () {
+      var b = document.getElementById('broken');
+      var f = document.getElementById('fixed');
+      return {
+        brokenClientWidth: b.clientWidth,
+        brokenOffsetWidth: b.offsetWidth,
+        fixedClientWidth: f.clientWidth,
+        fixedOffsetWidth: f.offsetWidth,
+        ua: navigator.userAgent
+      };
+    };
+  </script>
+</body>
+</html>

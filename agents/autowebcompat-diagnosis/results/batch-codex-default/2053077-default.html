@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Reduced OTP number-input spinner difference</title>
+<style>
+  /* Abbott's relevant cascade: this initially suppresses Firefox number controls. */
+  input[type="number"] { -moz-appearance: textfield; }
+
+  /* A later site rule overrides that appearance in Firefox. */
+  .otp input { appearance: none; }
+
+  /* This removes the spinner only in Chromium/WebKit. Firefox does not support it. */
+  input::-webkit-inner-spin-button { appearance: none; }
+
+  input { width: 25px; height: 32px; margin: 4px; border: 1px solid #777; }
+</style>
+<p>Expected OTP presentation: six plain digit boxes. Chrome shows plain boxes because
+its WebKit spin-button rule applies. Firefox instead shows native up/down controls in
+the narrow number inputs because the later appearance rule overrides textfield and
+Firefox has no ::-webkit-inner-spin-button pseudo-element.</p>
+<div id="otp" class="otp">
+  <input type="number" aria-label="Digit 1"><input type="number" aria-label="Digit 2">
+  <input type="number" aria-label="Digit 3"><input type="number" aria-label="Digit 4">
+  <input type="number" aria-label="Digit 5"><input type="number" aria-label="Digit 6">
+</div>
+<pre id="evidence"></pre>
+<script>
+  const input = document.querySelector('input');
+  evidence.textContent = JSON.stringify({
+    appearance: getComputedStyle(input).appearance,
+    webkitInnerSpinButtonAppearance:
+      getComputedStyle(input, '::-webkit-inner-spin-button').appearance
+  });
+</script>

@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Reduced test: auto-sized iframe flex item with aspect-ratio</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 20px; font: 16px/1.4 sans-serif; }
+  .test {
+    width: 800px;
+    height: 450px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ddd;
+    outline: 2px solid #333;
+  }
+  iframe {
+    aspect-ratio: 16 / 9;
+    max-width: 100%;
+    max-height: 100%;
+    border: 0;
+    outline: 6px solid #c22;
+  }
+</style>
+<h1>Auto-sized replaced flex item</h1>
+<p>
+  The gray flex container is 800×450 (16:9). The iframe has no width or
+  height attributes and only <code>aspect-ratio: 16/9</code>,
+  <code>max-width: 100%</code>, and <code>max-height: 100%</code>.
+</p>
+<p>
+  Chrome expands the iframe to the largest 16:9 size allowed by the container.
+  Firefox instead keeps the iframe's default 300px intrinsic width, producing
+  a 300×168.75 box in the center.
+</p>
+<div class="test">
+  <iframe srcdoc="<!doctype html><style>html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#174a7e;color:white;font:28px sans-serif}strong{padding:20px;border:4px solid white}</style><strong>iframe viewport</strong>"></iframe>
+</div>
+<output id="result"></output>
+<script>
+  const iframe = document.querySelector('iframe');
+  iframe.addEventListener('load', () => {
+    const rect = iframe.getBoundingClientRect();
+    result.textContent = `Measured iframe: ${rect.width.toFixed(2)} × ${rect.height.toFixed(2)} CSS px`;
+  });
+</script>

@@ -1,0 +1,99 @@
+{
+  "status": "ok",
+  "error": null,
+  "findings": {
+    "num_turns": 250,
+    "total_cost_usd": null,
+    "backend": "codex",
+    "model": null,
+    "entries": [
+      {
+        "bug_id": 2053077,
+        "status": "succeeded",
+        "backend": "codex",
+        "model": null,
+        "num_turns": 95,
+        "total_cost_usd": null,
+        "usage": {
+          "input": 2112983,
+          "cached_input": 1923173,
+          "output": 11851,
+          "reasoning_output": 2103,
+          "total": 2124834
+        },
+        "result": {
+          "root_cause": "This is a site CSS compatibility bug caused by relying on the non-standard Chromium/WebKit ::-webkit-inner-spin-button pseudo-element to suppress number-input steppers. Abbott has an earlier Firefox-oriented -moz-appearance:textfield rule, but a later/higher-specificity appearance:none rule wins in the effective cascade. In Firefox, appearance:none on type=number still leaves the native stepper buttons in this rendering behavior, and the WebKit-only pseudo-element rule cannot target them. Chrome recognizes that pseudo-element and removes its spinner, so it displays plain OTP boxes. The reduced test isolates the same cascade with no scripts, external resources, console errors, or network failures, ruling out OTP logic, UA sniffing, request failure, and the shared page exceptions as causes.",
+          "firefox_findings": "On the active Abbott requisition used by the verified script, the OTP POST (/applySubmit) completed with HTTP 200 and six input[type=number].otp-field-input controls were created. Typing \"1\" set the first input's DOM value to \"1\", so OTP delivery and input handling work. Firefox nevertheless painted native up/down number steppers inside each 25px-wide control. The page probe reported input appearance \"none\", an empty computed appearance for ::-webkit-inner-spin-button, and no Firefox support for that pseudo-element. Shared document.domain, missing jQuery/plugin, null classList, and tracking failures were non-blocking and also occurred in Chrome. In the reduced file Firefox again computed appearance:none, CSS.supports(selector(input::-webkit-inner-spin-button)) was false, and the screenshot visibly showed steppers obscuring much of the first digit.",
+          "chrome_findings": "The same active Abbott flow also returned HTTP 200 from /applySubmit, created the same six number inputs, and accepted \"1\" as the first DOM value. Chrome painted plain OTP boxes. Its probe reported input appearance \"none\", ::-webkit-inner-spin-button appearance \"none\", and support for that pseudo-element. The reduced file reproduced the same result: no spinner controls, with the first digit plainly visible. Shared site console errors and unrelated tracking failures did not prevent the flow.",
+          "difference": "The DOM, successful OTP request, number-input types, and entered value are equivalent. The rendering divergence is specifically the engine-specific spinner styling: Chrome recognizes the site's ::-webkit-inner-spin-button rule and computes that pseudo-element to appearance:none; Firefox does not recognize/expose it and therefore retains native number steppers after the effective input appearance becomes none. In the narrow controls those steppers consume the digit area and create the reported drop-down appearance.",
+          "confidence": "high \u2014 the real flow and a script-free reduced case show the identical engine-specific visual difference, directly correlated with support and computed styling of ::-webkit-inner-spin-button.",
+          "steps": "1. Read /tmp/autowebcompat-diagnosis-f5nogbg7/2053077-default.repro.mjs, which uses active requisition https://www.jobs.abbott/us/en/apply?jobSeqNo=ABLAUS31154902ENUSEXTERNAL&applyChannel=phenomBot&utm_appsource=career-site-bot&step=1&stepname=applicantAcknowledgment because the reported requisition is closed.\n2. Reviewed its Firefox/Chrome observations: fresh generated @mail.com addresses, successful /applySubmit HTTP 200 responses, six .otp-field-input number controls, and a first input DOM value of \"1\" in both engines.\n3. Compared computed styles and error/request evidence from the verified reproduction: Firefox had appearance:none but no ::-webkit-inner-spin-button computed appearance; Chrome had appearance:none on both the input and that pseudo-element. Shared site exceptions and tracking failures did not block OTP creation.\n4. Wrote /tmp/autowebcompat-diagnosis-f5nogbg7/2053077-default.html with six narrow number inputs and the minimal relevant cascade: an earlier -moz-appearance:textfield declaration, a later higher-specificity appearance:none declaration, and a ::-webkit-inner-spin-button { appearance:none } rule.\n5. Loaded the exact file URL file:///tmp/autowebcompat-diagnosis-f5nogbg7/2053077-default.html through both Firefox and Chrome DevTools.\n6. Probed both pages with evaluate_script, setting the first value to \"1\" and recording appearance, pseudo-element appearance, CSS selector support, and input count/value.\n7. Inspected console and network state for the reduced page: Firefox had no console messages or external requests; Chrome only reported a non-causal missing id/name form-field issue and loaded the local document successfully.\n8. Captured and visually inspected both reduced-page screenshots: Firefox displayed up/down steppers in all six boxes and crowded the digit, while Chrome displayed six plain boxes with the first digit visible.",
+          "testcase_created": true,
+          "reproduced": true,
+          "testcase_url": "2053077-default.html",
+          "puppeteer_script_url": "2053077-default.repro.mjs"
+        },
+        "error": null
+      },
+      {
+        "bug_id": 2040305,
+        "status": "succeeded",
+        "backend": "codex",
+        "model": null,
+        "num_turns": 83,
+        "total_cost_usd": null,
+        "usage": {
+          "input": 1277571,
+          "cached_input": 1191607,
+          "output": 10297,
+          "reasoning_output": 1531,
+          "total": 1287868
+        },
+        "result": {
+          "root_cause": "The site depends on CSS :target to reveal the login modal (.modal:target { visibility: visible; opacity: 1; }) while Vue patches/replaces the server-rendered #login node. Firefox's fragment target remains tied to the original element: removing/replacing that element clears :target, and insertion of another element with the same id does not re-resolve the unchanged location fragment. Blink re-resolves/retargets to the replacement node. The reduced test reproduces this solely by replacing an initially targeted #late element via innerHTML in requestAnimationFrame, ruling out Vue, user-agent sniffing, network failures, and the site's unrelated console warnings as causes.",
+          "firefox_findings": "On the real page, Firefox 153 retained location.hash '#login', Vue was mounted on #main-area, and the captcha canvas existed, proving the login application ran. However document.querySelector(':target') returned null, #login.matches(':target') was false, and #login computed to visibility:hidden. The console contained a Vue template-compilation warning in the separate privacy-policy component and a ReferenceError log; the only HTTP error listed was the unrelated rsms.me stylesheet 404. In the standalone test, replacing an initially targeted element with a new same-ID element likewise left Firefox with hash '#late' but no :target and visibility:hidden, with no external resources or console errors.",
+          "chrome_findings": "On the same real URL, Chrome retained '#login' and, after Vue mounted, document.querySelector(':target') returned #login, #login.matches(':target') was true, and computed visibility was visible; the captcha canvas was also present. Chrome had unrelated HTTP/2 failures for API calls and blocked the rsms.me stylesheet, yet the modal still displayed. In the standalone test, after the initially targeted node was replaced with a same-ID node, Chrome associated :target with the replacement and kept it visible.",
+          "difference": "Both browsers load and execute the same Vue login application and end with an element whose id is 'login' plus location.hash '#login'. The decisive divergence is fragment-target state after DOM replacement: Firefox clears the target when the original node is replaced and does not resolve the unchanged fragment to the replacement; Chrome does. Consequently the site's .modal:target rule applies only in Chrome.",
+          "confidence": "high \u2014 the reduced same-ID node-replacement test reproduces the exact hash/:target/style divergence without Vue, network activity, or site-specific code.",
+          "steps": "1. Read the verified Puppeteer script at /tmp/autowebcompat-diagnosis-_ns0fs9s/2040305-default.repro.mjs and identified its probes for location.hash, document.querySelector(':target'), Element.matches(':target'), and computed visibility.\n2. Loaded https://www.centuryasia.com.tw/login.html?obj=l&obj1=i&ver=I+DfKKUJFcA=#login in Firefox DevTools and probed the DOM: hash '#login', existing #login, no :target, #login not matching :target, hidden visibility, Vue mounted, and captcha canvas present.\n3. Inspected Firefox console and network records: observed an unrelated Vue privacy-policy template warning/ReferenceError log and an rsms.me stylesheet 404, but no failure preventing the login application from mounting.\n4. Loaded the identical URL in Chrome DevTools and ran the identical probe: hash '#login', :target equal to #login, matching true, visible visibility, Vue mounted, and captcha present.\n5. Inspected Chrome console and network records: despite unrelated API HTTP/2 failures and the rsms.me stylesheet being blocked, the modal remained visible.\n6. Wrote /tmp/autowebcompat-diagnosis-_ns0fs9s/2040305-default.html with an initially present #late target, CSS that hides #late except under #late:target, and requestAnimationFrame code that replaces it with a new same-ID node.\n7. Loaded file:///tmp/autowebcompat-diagnosis-_ns0fs9s/2040305-default.html#late in fresh Firefox and Chrome pages and ran identical DOM/style probes: Firefox had no :target and hid the replacement, while Chrome targeted and displayed it.",
+          "testcase_created": true,
+          "reproduced": true,
+          "testcase_url": "2040305-default.html",
+          "puppeteer_script_url": "2040305-default.repro.mjs"
+        },
+        "error": null
+      },
+      {
+        "bug_id": 2052489,
+        "status": "succeeded",
+        "backend": "codex",
+        "model": null,
+        "num_turns": 72,
+        "total_cost_usd": null,
+        "usage": {
+          "input": 766629,
+          "cached_input": 688892,
+          "output": 8318,
+          "reasoning_output": 621,
+          "total": 774947
+        },
+        "result": {
+          "root_cause": "The site relies on an interoperability difference in CSS sizing of a replaced iframe that is an auto-sized flex item: it provides neither width/height attributes nor definite width/height CSS, only aspect-ratio:16/9 with max-width:100% and max-height:100%. Firefox retains the iframe\u2019s 300px default intrinsic width when resolving its flex base/automatic size, then derives 168.75px height from the ratio. Chromium transfers the flex container\u2019s definite 704px height/max-height through the preferred aspect ratio and expands the iframe to roughly 1252x704. The reduced test proves this layout-engine sizing divergence alone is sufficient; the undersized iframe viewport is what makes the game content appear overlapped and improperly scaled.",
+          "firefox_findings": "At a 1365x768 viewport on https://drmeth.com/, the iframe[x-ref=gameIframe] has no width or height attributes and computes to width 300px, height 168.75px, aspect-ratio 16/9, max-width/max-height 100%, flex 0 1 auto. Its parent is a centered row flex container. The embedded document therefore receives a 300x169 viewport and its fixed/proportional game UI compresses and overlaps. Firefox supports the relevant CSS features, the DOM markup is the same as Chrome, console output contains only the benign \u201cInitializing auth app\u201d message, and the reproduction script observed no failed requests or HTTP >=400 responses. The standalone reduced file renders the bordered iframe at 308x173.25 (300px default content width plus borders), confirming the behavior without site scripts or network dependencies.",
+          "chrome_findings": "With the same URL, viewport, markup, and computed constraints, Chrome sizes the iframe to about 1251.55x703.98 and the embedded document receives a 1252x704 viewport. Chrome\u2019s console warnings concern Statcounter parser blocking and software WebGL, not layout. The reproduction script recorded three aborted ancillary ad/announcement requests but no HTTP >=400 responses; these failures occur in the browser where layout works. The standalone reduced file, with no external resources or JavaScript sizing logic, likewise renders at 1251.55x703.98.",
+          "difference": "Firefox uses the iframe replaced element\u2019s default 300px width as the auto/intrinsic flex base and applies the 16:9 ratio to obtain about 169px height. Chrome instead uses the definite available/max height of the 704px flex container to resolve the auto size through the 16:9 preferred aspect ratio, producing about 1252px width. Identical DOM, CSS feature support, and computed declarations plus reproduction in a self-contained file rule out user-agent branching, embedded-game code, console errors, and network failures.",
+          "confidence": "high \u2014 the self-contained reduced case reproduces the same >4x width divergence with identical markup/CSS and without site JavaScript or network resources.",
+          "steps": "1. Read the verified Puppeteer script at /tmp/autowebcompat-diagnosis-ed34049f/2052489-default.repro.mjs and identify its URL, 1365x768 viewport, iframe selector, and geometry/console/network probes.\n2. Run `NODE_PATH=/app/node/node_modules node /tmp/autowebcompat-diagnosis-ed34049f/2052489-default.repro.mjs`; observe Firefox at 300x168.75 with embedded viewport 300x169 and Chrome at 1251.55x703.98 with embedded viewport 1252x704.\n3. Open https://drmeth.com/ in Firefox and Chrome DevTools, set both viewports to 1365x768, and evaluate the same iframe\u2019s outerHTML, bounding rectangle, computed width/height/aspect-ratio/max constraints/flex value, absent width/height attributes, parent flex styles, CSS.supports results, and navigator.userAgent.\n4. List console messages and network requests in both browsers; verify no Firefox exception or failed request correlates with the symptom, while Chrome-only warnings and ancillary aborted requests occur despite correct layout.\n5. Create /tmp/autowebcompat-diagnosis-ed34049f/2052489-default.html containing only a 1365px-wide, 704px-high centered flex container and an attribute-less iframe styled with aspect-ratio:16/9, max-width:100%, and max-height:100%, plus an inline explanation.\n6. Load file:///tmp/autowebcompat-diagnosis-ed34049f/2052489-default.html in both DevTools browsers at 1365x768 and evaluate its geometry; confirm Firefox renders 308x173.25 including borders while Chrome renders 1251.55x703.98, with identical computed sizing declarations and no external network dependencies.",
+          "testcase_created": true,
+          "reproduced": true,
+          "testcase_url": "2052489-default.html",
+          "puppeteer_script_url": "2052489-default.repro.mjs"
+        },
+        "error": null
+      }
+    ],
+    "start_time": "2026-07-24 04:51:24.735147",
+    "end_time": "2026-07-24 05:11:07.298073"
+  },
+  "actions": []
+}

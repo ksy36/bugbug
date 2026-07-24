@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>2040305 - :target re-resolution after element replaced at DOMContentLoaded</title>
+<style>
+  /* Mirrors centuryasia.com.tw: the "Member Login" modal is shown SOLELY via
+     the CSS :target pseudo-class. No JS/class toggles it. */
+  .modal {
+    opacity: 0;
+    visibility: hidden;
+    border: 2px solid #444;
+    padding: 1em;
+    background: #eef;
+  }
+  .modal:target {
+    opacity: 1;
+    visibility: visible;
+  }
+  #status { font: 14px monospace; white-space: pre; margin-top: 1em; }
+</style>
+</head>
+<body>
+<!--
+  EXPECTED BEHAVIOUR / WHAT THIS TESTS
+  ------------------------------------
+  Load this file already at the fragment "#login"
+  (…/2040305-default.html#login).
+
+  This reproduces the exact lifecycle observed on the real site
+  (centuryasia.com.tw), instrumented in Chrome:
+      DOMContentLoaded : #login present, :target = FALSE
+      load / complete  : :target flips to TRUE  (Chrome re-resolves the fragment)
+
+  i.e. the site's Vue app removes the parse-time #login target node and inserts a
+  NEW element with the same id="login" AFTER the browser's parse-time fragment
+  resolution but BEFORE the load event. We reproduce that window by doing the
+  swap inside a DOMContentLoaded handler.
+
+  The modal is visible IFF the (new) #login matches :target.
+
+  CHROME:  performs an ADDITIONAL fragment/:target resolution at load/complete,
+           after the swap, so the new #login becomes :target -> modal VISIBLE.
+
+  FIREFOX: resolves the fragment target only once (parse time). After the
+           original target node is removed it does NOT re-resolve to the new
+           same-id element at load -> :target never matches -> modal HIDDEN.
+
+  => Same markup+CSS+timing, modal VISIBLE in Chrome, HIDDEN in Firefox on a
+     clean load. (In Firefox, only a fresh hashchange — e.g. location.hash=''
+     then '#login' — makes it appear, matching the report.)
+-->
+<h1>:target re-resolution after replacement at DOMContentLoaded</h1>
+<p>Load with the <code>#login</code> fragment.</p>
+
+<div class="modal" id="login">MEMBER LOGIN MODAL (original, parsed node)</div>
+
+<div id="status">running…</div>
+
+<script>
+  // Swap the #login node during DOMContentLoaded: this is AFTER the browser's
+  // parse-time fragment resolution but BEFORE the load event — exactly the
+  // window in which the real site's Vue app recreates the modal.
+  document.addEventListener('DOMContentLoaded', function () {
+    var old = document.getElementById('login');
+    var parent = old.parentNode;
+    var next = old.nextSibling;
+    old.remove();
+    var el = document.createElement('div');
+    el.id = 'login';
+    el.className = 'modal';
+    el.textContent = 'MEMBER LOGIN MODAL (new node created at DOMContentLoaded)';
+    parent.insertBefore(el, next);
+  });
+
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      var login = document.getElementById('login');
+      var cs = getComputedStyle(login);
+      var isTarget = login.matches(':target');
+      var visible = cs.visibility === 'visible' && parseFloat(cs.opacity) > 0.5;
+      document.getElementById('status').textContent =
+        'location.hash            = ' + location.hash + '\n' +
+        '#login.matches(:target)  = ' + isTarget + '\n' +
+        'computed visibility      = ' + cs.visibility + '\n' +
+        'computed opacity         = ' + cs.opacity + '\n' +
+        'MODAL VISIBLE            = ' + visible;
+      document.title = 'target=' + isTarget + ' visible=' + visible;
+    }, 300);
+  });
+</script>
+</body>
+</html>

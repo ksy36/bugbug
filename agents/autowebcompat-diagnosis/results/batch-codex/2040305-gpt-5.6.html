@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Reduced test: :target after replacing the targeted element</title>
+<style>
+  body { font: 16px sans-serif; }
+  .modal { padding: 1rem; border: 3px solid #b00020; visibility: hidden; opacity: 0; }
+  .modal:target { border-color: #087f23; visibility: visible; opacity: 1; }
+  #result { white-space: pre-wrap; }
+</style>
+
+<h1>Fragment target replacement test</h1>
+<p>
+  Load this file with <code>#login</code>. The initially targeted element is cloned,
+  a clone with the same ID is inserted at <code>DOMContentLoaded</code>, and
+  then the original is removed before final load processing. Chrome
+  retargets the remaining <code>#login</code>, so the green box stays visible.
+  Firefox leaves no element matching <code>:target</code>, so the box becomes hidden.
+</p>
+
+<div id="login" class="modal">Member Login</div>
+<script>
+  let replacement;
+  let originalWasTarget;
+  addEventListener('DOMContentLoaded', () => {
+    const original = document.getElementById('login');
+    replacement = original.cloneNode(true);
+    replacement.dataset.replacement = 'true';
+    original.after(replacement);
+    originalWasTarget = original.matches(':target');
+    original.remove();
+  });
+</script>
+
+<pre id="result">Waiting for parsing to finish…</pre>
+<script>
+  addEventListener('load', () => {
+    setTimeout(() => {
+      const target = document.querySelector(':target');
+      const style = getComputedStyle(replacement);
+      document.getElementById('result').textContent = JSON.stringify({
+        hash: location.hash,
+        originalWasTarget,
+        loginCount: document.querySelectorAll('[id="login"]').length,
+        targetId: target?.id ?? null,
+        replacementMatchesTarget: replacement.matches(':target'),
+        visibility: style.visibility,
+        opacity: style.opacity
+      }, null, 2);
+    }, 100);
+  });
+</script>

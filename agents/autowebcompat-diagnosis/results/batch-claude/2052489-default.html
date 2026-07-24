@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>webcompat 2052489 — replaced element (iframe) with aspect-ratio + max-width/max-height in a flex container</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  /* Body is a column flex container, like drmeth.com's <body>. */
+  body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #404040;
+    font-family: sans-serif;
+  }
+  .legend {
+    color: #fff;
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    background: #222;
+  }
+  /* The "game area": a row flex container that centers its single child.
+     Mirrors drmeth.com's  <div class="flex flex-1 items-center justify-center overflow-hidden">. */
+  .stage {
+    flex: 1 1 0%;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #b8b8bd; /* zinc-400-ish */
+  }
+  /* The replaced element (the game iframe on drmeth.com).
+     It has ONLY: aspect-ratio, max-width:100%, max-height:100%.
+     No explicit width/height (neither attributes nor CSS).
+     This mirrors  <iframe class="aspect-video max-h-full max-w-full">. */
+  .replaced {
+    aspect-ratio: 16 / 9;
+    max-width: 100%;
+    max-height: 100%;
+    /* default flex item sizing: flex: 0 1 auto */
+    border: 0;
+    display: block;
+    background: repeating-linear-gradient(45deg, #2a7, #2a7 20px, #185 20px, #185 40px);
+  }
+</style>
+</head>
+<body>
+  <div class="legend">
+    <b>What should happen:</b> the green box (a replaced element with
+    <code>aspect-ratio:16/9; max-width:100%; max-height:100%</code> and NO explicit
+    width/height, sitting as a flex item in a centered flex container) should grow to
+    fill the available gray stage area while preserving its 16:9 ratio — a large box.
+    <br>
+    <b>Chrome:</b> the box fills the stage (large, ~full width). ✅ correct
+    <br>
+    <b>Firefox:</b> the box collapses to the replaced element's DEFAULT intrinsic size
+    (~300&times;169px) — a tiny box centered in a mostly-empty stage. ❌ (matches the
+    drmeth.com report: game squeezed into a tiny box, internal UI overlapping/unscaled)
+    <br>
+    Measured width is printed below each box after load.
+  </div>
+
+  <!-- Case A: the exact drmeth.com case — an <iframe> replaced element -->
+  <div class="stage">
+    <iframe class="replaced" title="iframe replaced element"
+            srcdoc="<div style='font:20px sans-serif;padding:8px'>game iframe content</div>"></iframe>
+  </div>
+  <div class="legend" id="out-iframe">iframe measured width: (measuring…)</div>
+
+  <!-- Case B: an <img> replaced element, to show it is general replaced-element sizing -->
+  <div class="stage">
+    <img class="replaced" alt="img replaced element"
+         src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='9'><rect width='16' height='9' fill='%23c33'/></svg>">
+  </div>
+  <div class="legend" id="out-img">img measured width: (measuring…)</div>
+
+<script>
+  function report() {
+    const ifr = document.querySelector('.stage iframe.replaced');
+    const img = document.querySelector('.stage img.replaced');
+    document.getElementById('out-iframe').textContent =
+      'iframe measured width: ' + Math.round(ifr.getBoundingClientRect().width) +
+      'px (stage width ' + Math.round(ifr.parentElement.getBoundingClientRect().width) + 'px)';
+    document.getElementById('out-img').textContent =
+      'img measured width: ' + Math.round(img.getBoundingClientRect().width) +
+      'px (stage width ' + Math.round(img.parentElement.getBoundingClientRect().width) + 'px)';
+  }
+  window.addEventListener('load', () => setTimeout(report, 300));
+</script>
+</body>
+</html>

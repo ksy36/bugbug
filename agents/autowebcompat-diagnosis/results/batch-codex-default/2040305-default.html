@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Late-created fragment target reduction</title>
+<style>
+  #late { visibility: hidden; padding: 1em; border: 3px solid red; }
+  #late:target { visibility: visible; border-color: green; }
+</style>
+<p>This page is loaded with <code>#late</code>. After initial fragment processing,
+the matching server-rendered element is replaced by a new element with the same
+ID, as happens when Vue patches the Century Asia login markup. The replacement
+should remain the target and the green box visible. Chrome does this; Firefox
+keeps the fragment but loses <code>:target</code> and hides the replacement.</p>
+<main id="app"><section id="late">Initial target</section></main>
+<script>
+  requestAnimationFrame(() => {
+    document.querySelector('#app').innerHTML =
+      '<section id="late">Replacement target should be visible</section>';
+  });
+</script>

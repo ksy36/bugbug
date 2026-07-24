@@ -1,0 +1,99 @@
+{
+  "status": "ok",
+  "error": null,
+  "findings": {
+    "num_turns": 439,
+    "total_cost_usd": null,
+    "backend": "codex",
+    "model": "gpt-5.6",
+    "entries": [
+      {
+        "bug_id": 2053077,
+        "status": "succeeded",
+        "backend": "codex",
+        "model": "gpt-5.6",
+        "num_turns": 178,
+        "total_cost_usd": null,
+        "usage": {
+          "input": 4035160,
+          "cached_input": 3804929,
+          "output": 21170,
+          "reasoning_output": 4855,
+          "total": 4056330
+        },
+        "result": {
+          "root_cause": "The failure is a Gecko native-control rendering divergence for `<input type=\"number\">`: Firefox continues to construct and paint the number spin-button UI when the control's computed `appearance` is `none`, while Chrome treats `appearance: none` as suppressing that spinner UI. There is no differing OTP response, DOM structure, feature-detection branch, or user-agent-specific markup involved. The site's 25px fixed width and horizontal padding amplify the Gecko behavior: the retained spinner occupies the content box, makes each field look like a compact drop-down, and covers the entered digit. The reduced test proves the trigger without site scripts: the same `type=number`, narrow width, and `appearance:none` alone produce arrows in Firefox but not Chrome; Firefox's adjacent `appearance:textfield` control has no arrows, isolating the issue to Gecko's handling of the `none` appearance value for number controls.",
+          "firefox_findings": "Firefox 153 reproduced the reported presentation after OTP creation: six 25px-wide, 36px-high `<input type=\"number\" class=\"otp-field-input form-control\">` elements appeared with native up/down stepper arrows. OTP creation itself succeeded, with the success text present and three observed `/applySubmit` POSTs returning HTTP 200. Computed styles on the first input were `width: 25px`, `padding: 4px 6px`, `box-sizing: border-box`, and `appearance: none`; both `appearance: none` and `appearance: textfield` feature tests returned supported. The live `style_v2.css` contains WebKit pseudo-element rules and Mozilla appearance declarations, while another loaded form-control rule also sets `appearance: none`; the resulting computed value on the failing element is `none`. The verified Puppeteer image probe counted 70 dark pixels in the top-interior arrow region. In the reduced case, Firefox painted steppers for `appearance: none`, did not paint them for `appearance: textfield`, and painted them for the default `auto` number input. Site console errors such as missing jQuery/null elements were unrelated because the OTP UI and network operation completed.",
+          "chrome_findings": "Chrome 151 loaded the same Abbott application flow, created the same six `<input type=\"number\">` OTP controls, and received HTTP 200 responses from the relevant `/applySubmit` requests. Each control had the same 25px by 36px geometry, padding, and computed `appearance: none`, but Chrome did not paint native spin buttons. The verified Puppeteer image probe counted 0 dark pixels in the arrow region. On the reduced test case, Chrome likewise suppressed the steppers for `appearance: none`, while its default number input retained normal number-control behavior. Console output contained an unrelated accessibility-script 404 and null `classList` exception; neither prevented OTP creation or correlated with the rendering difference.",
+          "difference": "Both browsers receive a successful OTP response and construct identical narrow number inputs with computed `appearance: none`. Firefox paints the native up/down stepper buttons inside those controls, whereas Chrome suppresses them. The reduced comparison further shows that Firefox removes its steppers with `appearance: textfield` but retains them with `appearance: none`; Chrome suppresses them with `appearance: none`. This direct paint difference consumes nearly all of the 25px control width only in Firefox and obscures entered digits.",
+          "confidence": "high \u2014 the same DOM and computed CSS were compared on the real site, and a standalone HTML case reduced the divergence to a number input with `appearance: none`.",
+          "steps": "1. Read the verified dual-browser Puppeteer script at `/tmp/autowebcompat-diagnosis-mns9o0xq/2053077-gpt-5.6.repro.mjs` and confirmed it navigates to `https://www.jobs.abbott/us/en/apply?jobSeqNo=ABLAUS31152679ENUSEXTERNAL&step=1&stepname=applicantAcknowledgment`, submits a generated email address, waits for six OTP inputs, and compares their screenshots.\n2. Ran `NODE_PATH=/app/node/node_modules node /tmp/autowebcompat-diagnosis-mns9o0xq/2053077-gpt-5.6.repro.mjs`; Firefox reported six number inputs, 25px width, computed `appearance=none`, and 70 arrow-region pixels, while Chrome reported the same DOM/style measurements and 0 arrow-region pixels.\n3. Opened the Abbott URL in Firefox DevTools, set a unique generated email using the native `HTMLInputElement.prototype.value` setter, dispatched an `input` event, clicked `Get OTP`, and waited until six `.otp-field-input` elements existed.\n4. In Firefox, probed the first OTP element with `evaluate_script`: it was `<input type=\"number\">`, measured 25px by 36px with `padding: 4px 6px`, and had computed `appearance: none`; the form contained the successful-OTP message.\n5. In Firefox, inspected network requests and confirmed the relevant `POST https://www.jobs.abbott/applySubmit` requests returned HTTP 200; inspected console messages and found unrelated site-script exceptions but no error blocking OTP construction.\n6. Fetched the live stylesheet `https://cdn-prod-static.phenompeople.com/CareerConnectResources/ABLAUS/css/apply/style_v2.css` from the page and inspected its OTP rules, including the 25px width, WebKit spin-button suppression selectors, and Mozilla appearance declarations; also identified the loaded form-control CSS that contributes `appearance: none`, matching the failing element's computed value.\n7. Repeated the same generated-email and `Get OTP` flow in Chrome DevTools; confirmed six identical number inputs with 25px by 36px geometry and computed `appearance: none`, and confirmed `/applySubmit` requests returned HTTP 200.\n8. Created the standalone reduced test at `/tmp/autowebcompat-diagnosis-mns9o0xq/2053077-gpt-5.6.html` with six narrow `<input type=\"number\">` controls using `appearance: none`, plus wider `none`, `textfield`, and default comparison controls.\n9. Loaded `file:///tmp/autowebcompat-diagnosis-mns9o0xq/2053077-gpt-5.6.html` in Firefox and Chrome. Firefox visibly painted steppers in every narrow `appearance:none` input and in the wider `none` comparison, but not in the `textfield` comparison. Chrome showed no steppers for `appearance:none`; screenshots confirmed the cross-browser difference.",
+          "testcase_created": true,
+          "reproduced": true,
+          "testcase_url": "2053077-gpt-5.6.html",
+          "puppeteer_script_url": "2053077-gpt-5.6.repro.mjs"
+        },
+        "error": null
+      },
+      {
+        "bug_id": 2040305,
+        "status": "succeeded",
+        "backend": "codex",
+        "model": "gpt-5.6",
+        "num_turns": 150,
+        "total_cost_usd": null,
+        "usage": {
+          "input": 3215832,
+          "cached_input": 3107629,
+          "output": 20266,
+          "reasoning_output": 5682,
+          "total": 3236098
+        },
+        "result": {
+          "root_cause": "The site implements the popup entirely through fragment targeting: .modal hides it and .modal:target reveals it. During Vue 2.5.17 mounting, Vue replaces the original DOM node whose id is \"login\" while the document URL already has #login. Firefox's fragment target remains associated with the removed original node (and is then cleared/stale), and it does not resolve the surviving replacement element with the same id during the remainder of initial loading. Chrome performs a later/final fragment resolution and assigns :target to the replacement #login. Consequently Firefox's final connected modal never matches :target and stays visibility:hidden/opacity:0. This is not caused by missing content, failed core resources, ETP, the Vue compilation warning, or user-agent sniffing; it is a Firefox-versus-Chrome difference in fragment target retargeting across DOM replacement during initial load.",
+          "firefox_findings": "On the real URL, Firefox 153.0 finished with location.hash == \"#login\" and exactly one connected div#login containing the Member Login UI, but document.querySelector(':target') returned null and div#login.matches(':target') was false. Its computed style was display:block, visibility:hidden, opacity:0, matching the site's base .modal styling rather than .modal:target, so the popup remained hidden. Vue 2.5.17 was present. Core document, CSS, Vue, and other site resources returned 200; the only observed failed resource was the unrelated https://rsms.me/inter/inter-ui.css (404). The Vue template compilation warning and a site ReferenceError were not causal because equivalent site-side errors also occurred in Chrome. Assigning location.hash to another fragment and then back to \"login\" after Vue had settled caused the surviving div#login to match :target and become visible, showing that the modal DOM and CSS work once Firefox performs a fresh fragment resolution.",
+          "chrome_findings": "On the same real URL, Chrome 151.0 ended with location.hash == \"#login\", one connected div#login, document.querySelector(':target').id == \"login\", and div#login.matches(':target') == true. Its computed style was display:block, visibility:visible, opacity:1, so the Member Login modal displayed. The verified reproduction trace showed the same Vue 2.5.17 replacement sequence and shared Vue warning as Firefox, while core resources loaded successfully. In the reduced test, after the original #login was replaced during DOMContentLoaded, Chrome resolved the remaining replacement as :target and kept it visible.",
+          "difference": "Both browsers receive the same page, CSS, Vue 2.5.17 code, and final DOM containing one replacement div#login while the URL remains #login. The observable divergence is fragment-target state: Firefox has no :target and applies .modal's hidden styles; Chrome assigns :target to the replacement #login and applies .modal:target's visible styles. The reduced testcase confirms this is a browser-engine difference caused by replacing the fragment-identified element during initial document loading, independent of the site's network requests or Vue warning.",
+          "confidence": "high \u2014 the real-site DOM/CSS probes, successful hash re-resolution in Firefox, verified mutation trace, and a minimal cross-browser testcase all isolate fragment retargeting as the sole behavior difference.",
+          "steps": "1. Read the verified Puppeteer reproduction script at /tmp/autowebcompat-diagnosis-li93xgbi/2040305-gpt-5.6.repro.mjs and confirmed it loads https://www.centuryasia.com.tw/login.html?obj=l&obj1=i&ver=I+DfKKUJFcA=#login in Firefox and Chrome, inspects #login/:target/computed styles, and activates the \u6703\u54e1\u767b\u5165 link.\n2. Opened https://www.centuryasia.com.tw/login.html?obj=l&obj1=i&ver=I+DfKKUJFcA=#login in Firefox DevTools and evaluated location.hash, navigator.userAgent, Vue.version, the number of #login elements, document.querySelector(':target'), div#login.matches(':target'), connectivity, text content, and computed display/visibility/opacity.\n3. Inspected Firefox console messages and network requests; recorded Vue 2.5.17, the template warning/site ReferenceError, successful core resources, and the unrelated inter-ui.css 404.\n4. In Firefox on the real page, assigned location.hash = 'other' and then location.hash = 'login' after Vue settled; verified that the surviving #login then matched :target and became visible.\n5. Opened the identical real URL in Chrome DevTools and ran the same DOM, feature, user-agent, and computed-style probes; verified #login matched :target and was visible.\n6. Created /tmp/autowebcompat-diagnosis-li93xgbi/2040305-gpt-5.6.html with inline CSS that hides .modal and reveals .modal:target, plus script that clones #login, inserts the replacement, and removes the original during DOMContentLoaded.\n7. Loaded file:///tmp/autowebcompat-diagnosis-li93xgbi/2040305-gpt-5.6.html?v=3#login in Firefox and confirmed one final #login remained but no element matched :target, with visibility:hidden and opacity:0.\n8. Loaded file:///tmp/autowebcompat-diagnosis-li93xgbi/2040305-gpt-5.6.html?v=3#login in Chrome and confirmed the final replacement #login matched :target, with visibility:visible and opacity:1.",
+          "testcase_created": true,
+          "reproduced": true,
+          "testcase_url": "2040305-gpt-5.6.html",
+          "puppeteer_script_url": "2040305-gpt-5.6.repro.mjs"
+        },
+        "error": null
+      },
+      {
+        "bug_id": 2052489,
+        "status": "succeeded",
+        "backend": "codex",
+        "model": "gpt-5.6",
+        "num_turns": 111,
+        "total_cost_usd": null,
+        "usage": {
+          "input": 2223735,
+          "cached_input": 2102012,
+          "output": 15161,
+          "reasoning_output": 2950,
+          "total": 2238896
+        },
+        "result": {
+          "root_cause": "The site leaves the game iframe's width and height auto and relies on aspect-ratio:16/9 (plus maximum constraints) to make it occupy the available viewport. Gecko and Blink implement the automatic size of this dimensionless replaced element differently. Gecko preserves the iframe's default 300px replaced-element width and derives 168.75px height from the preferred ratio. Blink expands the same auto-sized iframe to the largest 16:9 rectangle available from its containing block. Because the embedded game lays itself out against the iframe viewport, Gecko gives it a 300x169 viewport and its content overlaps, while Blink gives it about 1252x704 and it appears correct. The reduced test and aspect-ratio:auto control establish that the root cause is this cross-engine automatic iframe/replaced-element sizing divergence triggered by a specified aspect ratio; console and network evidence rule out loading, ETP, or script failure.",
+          "firefox_findings": "At the same 1365x768 Puppeteer viewport, Firefox 153 rendered the live iframe at 300x168.75 CSS px. The iframe had no width/height attributes or inline style and the same computed constraints as Chrome: aspect-ratio: 16 / 9, max-width: 100%, max-height: 100%, flex: 0 1 auto, min sizes auto. Its inner viewport was only 300x169 and #WRAPPER was 294px wide, causing the fixed/raster game UI to overlap in the center. Firefox console inspection found no errors, and network inspection found no HTTP failures. In the reduced test Firefox again produced exactly 300x168.75 in an 800x450 container. Controlled variants showed 300x150 when aspect-ratio was auto and 300x168.75 whenever 16/9 was supplied, regardless of flex/block container or max-constraint presence.",
+          "chrome_findings": "At a 1365x768 Puppeteer viewport, Chrome 151 rendered the live iframe at 1251.55x703.98 CSS px inside a 1365x704 flex container (91.7% width). The iframe had no width/height attributes or inline style; computed values were aspect-ratio: 16 / 9, max-width: 100%, max-height: 100%, width/height auto-derived, flex: 0 1 auto. Its inner viewport was 1252x704 and #WRAPPER was 1226.95px wide. The main game resources loaded successfully and console output contained no exception explaining layout. In the reduced test, Chrome rendered the same dimensionless iframe as 800x450, exactly filling the definite 800x450 container. A variant matrix showed that with aspect-ratio:auto Chrome returned to the iframe default 300x150, whereas with aspect-ratio:16/9 it expanded to 800x450 even when both max constraints were removed; this identifies Blink's automatic replaced-element sizing with a preferred aspect ratio as the divergent behavior.",
+          "difference": "Firefox uses the iframe's default replaced-element width as the automatic sizing basis: 300x168.75 with the declared 16:9 ratio. Chrome instead uses the available containing-block area to produce the largest fitting 16:9 box: 1251.55x703.98 on the site and 800x450 in the reduced test. Both browsers use 300x150 when aspect-ratio is changed to auto, so the observable divergence is specifically the automatic sizing of a dimensionless iframe/replaced element when a preferred aspect ratio is present, not different markup, resources, or game code.",
+          "confidence": "high \u2014 the live-site measurements, a minimal local testcase, and controlled CSS variants all reproduce the same deterministic 300px-versus-container-filling divergence with no loading error.",
+          "steps": "1. Read the verified reproduction script at /tmp/autowebcompat-diagnosis-9gigyteq/2052489-gpt-5.6.repro.mjs and identified its 1365x768 viewport, live iframe selector, and collected layout metrics.\n2. Re-ran the verified script with `NODE_PATH=/app/node/node_modules node /tmp/autowebcompat-diagnosis-9gigyteq/2052489-gpt-5.6.repro.mjs`; it measured Firefox at 300x168.75 and Chrome at 1251.55x703.98 and reproduced the report.\n3. Opened https://drmeth.com/ in Firefox DevTools, set the viewport to 1365x768, and used evaluate_script to inspect the iframe attributes, computed CSS, parent flex properties, inner viewport, and #WRAPPER geometry; then inspected console and failed network requests.\n4. Opened https://drmeth.com/ in Chrome DevTools at 1365x768 and ran the same DOM/computed-style probes, console inspection, and network inspection for direct comparison.\n5. Created /tmp/autowebcompat-diagnosis-9gigyteq/2052489-gpt-5.6.html containing an 800x450 container and an iframe with no width/height attributes and the site's aspect-ratio:16/9, max-width:100%, and max-height:100% declarations, plus inline expected-behavior text and measurement output.\n6. Loaded `file:///tmp/autowebcompat-diagnosis-9gigyteq/2052489-gpt-5.6.html?v=2` in Firefox and measured the iframe at 300x168.75 with a 300x169 inner viewport.\n7. Loaded the same local URL in Chrome and measured the iframe at 800x450 with an 800x450 inner viewport.\n8. Used evaluate_script in both browsers to vary aspect-ratio, max constraints, and flex/block container display; changing aspect-ratio to auto made both browsers use 300x150, while aspect-ratio:16/9 retained Firefox's 300px width and made Chrome fill the 800x450 available area.",
+          "testcase_created": true,
+          "reproduced": true,
+          "testcase_url": "2052489-gpt-5.6.html",
+          "puppeteer_script_url": "2052489-gpt-5.6.repro.mjs"
+        },
+        "error": null
+      }
+    ],
+    "start_time": "2026-07-24 05:45:48.706431",
+    "end_time": "2026-07-24 06:19:00.252992"
+  },
+  "actions": []
+}
