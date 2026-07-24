@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dynamic fragment target timing test</title>
+<style>
+  #login { display: none; padding: 1rem; background: #cfe8ff; }
+  #login:target { display: block; }
+</style>
+<p>Load this test as <code>?obj=l#login</code>. The Vue created hook repeats the
+site's <code>location.href = '#login'</code> fragment navigation during mount.
+Chrome retains <code>:target</code> and shows the box; Firefox loses it, leaving
+the CSS-only modal hidden. Changing the fragment away and back shows it.</p>
+<main id="main-area"><section v-show="regflag">registration</section><div id="login">Member Login modal</div></main>
+<script src="https://www.centuryasia.com.tw/scripts/vue.js"></script>
+<script>
+  new Vue({
+    el: '#main-area',
+    data: { regflag: false },
+    created() { if (new URL(location.href).searchParams.get('obj') === 'l') location.href = '#login'; }
+  });
+</script>

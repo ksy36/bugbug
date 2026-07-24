@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>webcompat 2052489 - auto-width replaced element (iframe) with aspect-ratio in a flex container</title>
+<style>
+  html, body { margin: 0; height: 100%; font-family: sans-serif; }
+  .row { display: flex; gap: 8px; padding: 8px; }
+  /* A tall-ish flex container matching drmeth.com: flex-1, centered, does NOT stretch children */
+  .stage {
+    display: flex;
+    align-items: center;     /* cross-axis: does NOT stretch the child */
+    justify-content: center; /* main-axis: does NOT grow the child */
+    width: 400px;
+    height: 260px;
+    background: #cfcfcf;
+    border: 2px solid #333;
+    overflow: hidden;
+  }
+  /* The drmeth.com sizing: aspect-ratio:16/9 + max-width/height:100%, NO width/height set. */
+  .aspect-video { aspect-ratio: 16 / 9; }
+  .maxfull { max-width: 100%; max-height: 100%; }
+  .box { background: #7cc; border: 1px dashed #039; }
+  .label { font-size: 12px; margin: 4px 0 0; }
+  code { background:#eee; padding:0 2px; }
+</style>
+</head>
+<body>
+<h3>Auto-width replaced element with <code>aspect-ratio</code> in a flex container</h3>
+<p>
+  Each stage below is a 400×260 flex box (<code>align-items:center; justify-content:center</code>),
+  mirroring drmeth.com's <code>flex flex-1 items-center justify-center</code> wrapper.
+  The blue element inside has <code>aspect-ratio:16/9; max-width:100%; max-height:100%</code>
+  and <b>no width/height set anywhere</b> — exactly like the game's
+  <code>&lt;iframe class="aspect-video max-h-full max-w-full"&gt;</code>.
+</p>
+<p><b>Expected / Chrome:</b> the block-level replaced element (iframe) STRETCHES to fill the
+   container's inline size (400px, then limited by 16/9 &amp; the 260px max-height) → large box.<br>
+   <b>Firefox (bug):</b> the iframe uses its DEFAULT intrinsic replaced width of <b>300px</b>
+   (→ clamped by max-width:100% to 400px? no — it takes 300px intrinsic, height 168.75px),
+   collapsing to a small box. A non-replaced <code>&lt;div&gt;</code> with the same CSS fills
+   the width in BOTH browsers — the divergence is specific to auto-width REPLACED elements.</p>
+
+<div class="row">
+  <div>
+    <div class="stage">
+      <iframe class="aspect-video maxfull box" src="about:blank"></iframe>
+    </div>
+    <p class="label">A: &lt;iframe&gt; (replaced) — KEY CASE</p>
+  </div>
+
+  <div>
+    <div class="stage">
+      <div class="aspect-video maxfull box">div</div>
+    </div>
+    <p class="label">B: &lt;div&gt; (non-replaced), same CSS</p>
+  </div>
+
+  <div>
+    <div class="stage">
+      <img class="aspect-video maxfull box" alt="no-src img (replaced)">
+    </div>
+    <p class="label">C: &lt;img&gt; no src (replaced)</p>
+  </div>
+</div>
+
+<pre id="out">measuring…</pre>
+<script>
+  function measure() {
+    const out = [];
+    document.querySelectorAll('.stage').forEach((stage, i) => {
+      const child = stage.firstElementChild;
+      const cr = child.getBoundingClientRect();
+      const cs = getComputedStyle(child);
+      out.push(
+        String.fromCharCode(65 + i) + ' ' + child.tagName +
+        ': width=' + Math.round(cr.width) + 'px height=' + Math.round(cr.height) +
+        'px  computed cssWidth=' + cs.width + '  (container=400px)'
+      );
+    });
+    document.getElementById('out').textContent =
+      navigator.userAgent + '\n\n' + out.join('\n');
+  }
+  requestAnimationFrame(() => requestAnimationFrame(measure));
+</script>
+</body>
+</html>

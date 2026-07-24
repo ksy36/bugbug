@@ -1,0 +1,99 @@
+{
+  "status": "ok",
+  "error": null,
+  "findings": {
+    "num_turns": 311,
+    "total_cost_usd": null,
+    "backend": "codex",
+    "model": "gpt-5.6-terra",
+    "entries": [
+      {
+        "bug_id": 2053077,
+        "status": "succeeded",
+        "backend": "codex",
+        "model": "gpt-5.6-terra",
+        "num_turns": 57,
+        "total_cost_usd": null,
+        "usage": {
+          "input": 1929627,
+          "cached_input": 1864513,
+          "output": 5692,
+          "reasoning_output": 1334,
+          "total": 1935319
+        },
+        "result": {
+          "root_cause": "Not diagnosed: the issue did not reproduce.",
+          "firefox_findings": "Firefox loaded the real application and exposed the Email textbox and Get OTP button. Following the report\u2019s interaction with test34@mail.com, the UI reported \u201cError while resending the OTP.\u201d No visible OTP input or select elements existed in the DOM. The Firefox console contained pre-existing site errors including SecurityError, undefined property access, missing jQuery, and null classList access; none was attributable specifically to an OTP-control rendering divergence. The captured initial application/schema and widget requests returned 200; no Firefox-only OTP response/control divergence was available.",
+          "chrome_findings": "Chrome loaded the same real page and, after entering the same address and clicking Get OTP, showed the same \u201cError while resending the OTP.\u201d message and no visible OTP input or select elements. Chrome therefore did not show the reported working OTP inputs. Chrome did report a separate 404 resource error and aborted LinkedIn tracking requests, but neither browser rendered OTP controls and there was no browser-specific OTP network response to compare.",
+          "difference": "Not reproduced on the current live Abbott application. After entering the report-provided email and clicking Get OTP, Firefox and Chrome both failed to expose any OTP controls, so the reported Firefox-only select/drop-down rendering versus Chrome text inputs could not be observed.",
+          "confidence": "n/a: not reproduced",
+          "steps": "1. Opened https://www.jobs.abbott/us/en/apply?jobSeqNo=ABLAUS31152679ENUSEXTERNAL&step=1&stepname=applicantAcknowledgment in a clean Firefox session.\n2. Entered test34@mail.com, the address supplied by the report, in Email and clicked Get OTP.\n3. Inspected the live DOM, console, and network activity in Firefox; the page showed \u201cError while resending the OTP.\u201d and no OTP input or select control was rendered.\n4. Repeated the same URL, email, click, DOM probes, console inspection, and network inspection in Chrome; it showed the same resend error and no OTP control.\n5. Wrote /tmp/autowebcompat-diagnosis-9a1kyrl6/2053077-gpt-5.6-terra.repro.mjs and ran NODE_PATH=/app/node/node_modules node /tmp/autowebcompat-diagnosis-9a1kyrl6/2053077-gpt-5.6-terra.repro.mjs.\n6. The script launched the supplied Firefox and Chrome binaries, completed the interaction in both, and printed \u201cDifference reproduced: NO.\u201d",
+          "testcase_created": false,
+          "reproduced": false,
+          "testcase_url": null,
+          "puppeteer_script_url": "2053077-gpt-5.6-terra.repro.mjs"
+        },
+        "error": null
+      },
+      {
+        "bug_id": 2040305,
+        "status": "succeeded",
+        "backend": "codex",
+        "model": "gpt-5.6-terra",
+        "num_turns": 157,
+        "total_cost_usd": null,
+        "usage": {
+          "input": 3486539,
+          "cached_input": 3341645,
+          "output": 17838,
+          "reasoning_output": 5729,
+          "total": 3504377
+        },
+        "result": {
+          "root_cause": "The site makes the member-login dialog entirely dependent on `.modal:target`, while its Vue/page initialization lifecycle interacts with the initial `#login` fragment. Firefox does not retain/establish the fragment target for the final #login modal at initial load in this lifecycle, whereas Chrome does. This is a browser divergence in fragment-target state/lifecycle, exposed by a fragile CSS-only modal design; it is not caused by resource loading, ETP, user-agent sniffing, or the common site console errors.",
+          "firefox_findings": "At the reported URL Firefox 153 loaded the login document, global.css, login_page.css, and login.js successfully. The #login modal exists and CSS.supports('selector(:target)') is true, but document.querySelector(':target') is null and #login.matches(':target') is false while location.hash is #login. Its computed visibility is hidden and opacity is 0, exactly suppressing the modal. Firefox console contains the same Vue template warning and `ReferenceError: url is not defined` seen in Chrome; neither is Firefox-specific. Network shows the only notable failed stylesheet is rsms.me/inter/inter-ui.css (404), unrelated to .modal:target. Changing the hash to #other then #login after the DOM exists makes #login match :target and become visible with opacity 1.",
+          "chrome_findings": "At the same URL Chrome loads the same document, login CSS, and login JS. #login exists, document.querySelector(':target').id is login, and #login.matches(':target') is true; computed visibility is visible and opacity is 1, so the modal displays. Chrome also logs the site's `ReferenceError: url is not defined`/Vue diagnostics and blocks rsms.me/inter/inter-ui.css (ORB), demonstrating those are not the cause.",
+          "difference": "Both browsers have the same #login modal and .modal:target rule, but only Chrome establishes #login as the initial fragment target. Firefox retains #login in location.hash but exposes no :target, leaving the CSS-only modal hidden. A subsequent fragment transition after page construction activates it in Firefox.",
+          "confidence": "high \u2014 the target-state and computed-style split is direct, reproducible in both browsers, and Firefox displays the same element immediately after an explicit post-load fragment transition.",
+          "steps": "1. Read the verified Puppeteer script at `/tmp/autowebcompat-diagnosis-5v8c8c1m/2040305-gpt-5.6-terra.repro.mjs`, which navigates Firefox and Chrome to `https://www.centuryasia.com.tw/login.html?obj=l&obj1=i&ver=I+DfKKUJFcA=#login` and probes `#login`.\n2. Re-ran it with `NODE_PATH=/app/node/node_modules node /tmp/autowebcompat-diagnosis-5v8c8c1m/2040305-gpt-5.6-terra.repro.mjs`; Firefox reported hidden/opacity 0 with no target and Chrome reported visible/opacity 1 with target login.\n3. Opened that exact URL in Firefox and Chrome DevTools, inspected console and network, and evaluated `location.hash`, `document.querySelector(':target')`, `#login.matches(':target')`, computed modal styles, CSS selector support, and user agents.\n4. In Firefox, set the fragment to `#other` and then `#login` after the page DOM was present; evaluated that #login then became :target and visible.\n5. Wrote the reduced lifecycle test to `/tmp/autowebcompat-diagnosis-5v8c8c1m/2040305-gpt-5.6-terra.html` and loaded it via both DevTools at `file:///tmp/autowebcompat-diagnosis-5v8c8c1m/2040305-gpt-5.6-terra.html?obj=l#login` to validate the fragment/modal mechanism.",
+          "testcase_created": true,
+          "reproduced": true,
+          "testcase_url": "2040305-gpt-5.6-terra.html",
+          "puppeteer_script_url": "2040305-gpt-5.6-terra.repro.mjs"
+        },
+        "error": null
+      },
+      {
+        "bug_id": 2052489,
+        "status": "succeeded",
+        "backend": "codex",
+        "model": "gpt-5.6-terra",
+        "num_turns": 97,
+        "total_cost_usd": null,
+        "usage": {
+          "input": 1595087,
+          "cached_input": 1487362,
+          "output": 9746,
+          "reasoning_output": 1809,
+          "total": 1604833
+        },
+        "result": {
+          "root_cause": "The site relies on Chrome-specific sizing of an auto-sized replaced flex item: max-height:100% plus aspect-ratio is being treated by Chrome as a size to fill, but Firefox resolves the auto-sized iframe from its 300px intrinsic/default width and only derives height from the ratio. Because no definite width or height is supplied, Firefox\u2019s 300\u00d7168.75 result constrains the entire embedded game and breaks its non-responsive absolute-positioned UI. This is a CSS replaced-element/flex intrinsic-sizing interoperability dependency, not a network failure, JavaScript exception, unsupported aspect-ratio feature, ETP effect, or UA-sniffed code path.",
+          "firefox_findings": "Firefox 153 at 1366\u00d7768 rendered drmeth.com\u2019s game iframe at 300\u00d7168.75 inside a 1366\u00d7618 centered flex parent. Computed iframe style was width: 300px, height: 168.75px, flex: 0 1 auto, aspect-ratio: 16 / 9, max-width/max-height: 100%; it has no width/height attributes. Its embedded #WRAPPER was only 294\u00d7152.1, which explains the overlapping fixed/absolute game UI. CSS.supports('aspect-ratio: 16 / 9') is true, so this is not absent feature support. Firefox console contained only \u201cInitializing auth app\u201d (no exception); its network inspection found no HTTP >=400 requests and game CSS/JS/font/images loaded successfully.",
+          "chrome_findings": "Chrome 151 at the same viewport rendered the identical iframe/CSS at 1251.55\u00d7703.98 in a 1366\u00d7704 centered flex parent; embedded #WRAPPER was 1226.95\u00d7633.59 and the game displayed normally. The site/game document, CSS, scripts, fonts and images returned 200 (the game document redirected 301 then returned 200). Console warnings were StatCounter document.write and headless software-WebGL warnings, plus the auth log; none is a layout exception.",
+          "difference": "Both browsers receive the same markup (an iframe with no width/height attributes, aspect-ratio:16/9, max-width:100%, max-height:100%) in a centered flex container and both support aspect-ratio. Firefox retains the iframe\u2019s 300px intrinsic/default width and derives 168.75px height; Chrome instead derives width from the available max-height and uses nearly all available height (1251.55\u00d7703.98). The smaller Firefox iframe makes the game\u2019s fixed/absolute layout overlap.",
+          "confidence": "high \u2014 the live DOM/computed-style comparison and a standalone reduction reproduce the exact 300\u00d7168.75 versus 1251.55\u00d7703.98 divergence without site scripts or network resources.",
+          "steps": "1. Read the verified reproduction script at /tmp/autowebcompat-diagnosis-b44ptw3a/2052489-gpt-5.6-terra.repro.mjs and reran it with `NODE_PATH=/app/node/node_modules node /tmp/autowebcompat-diagnosis-b44ptw3a/2052489-gpt-5.6-terra.repro.mjs`; it reproduced Firefox 300\u00d7168.75 and Chrome 1251.55\u00d7703.98 at 1366\u00d7768.\n2. Used Firefox and Chrome DevTools to load https://drmeth.com/ at 1366\u00d7768, inspect console and network entries, and evaluate the iframe, its flex parent, computed CSS, feature support, UA, and embedded #WRAPPER dimensions.\n3. Wrote the standalone reduction to /tmp/autowebcompat-diagnosis-b44ptw3a/2052489-gpt-5.6-terra.html. It contains only a centered flex stage and an iframe with aspect-ratio:16/9, max-width:100%, and max-height:100%, plus srcdoc panels to make insufficient iframe space visible.\n4. Loaded file:///tmp/autowebcompat-diagnosis-b44ptw3a/2052489-gpt-5.6-terra.html in both DevTools browsers and evaluated its boxes: Firefox was 300\u00d7168.75; Chrome was 1251.55\u00d7703.98, confirming the minimized repro.",
+          "testcase_created": true,
+          "reproduced": true,
+          "testcase_url": "2052489-gpt-5.6-terra.html",
+          "puppeteer_script_url": "2052489-gpt-5.6-terra.repro.mjs"
+        },
+        "error": null
+      }
+    ],
+    "start_time": "2026-07-24 14:25:10.003389",
+    "end_time": "2026-07-24 14:38:16.850807"
+  },
+  "actions": []
+}

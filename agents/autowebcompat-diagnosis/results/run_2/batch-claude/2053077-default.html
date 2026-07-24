@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>webcompat 2053077 - OTP input[type=number] appearance:none spin-button</title>
+<style>
+  /* This mirrors the real jobs.abbott OTP cell: a ~25px-wide
+     input[type=number] whose native number spin-button is hidden with
+     CSS `appearance:none` (+ -webkit-appearance:none). */
+  .otp-field-input {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 25px;
+    height: 32px;
+    text-align: center;
+    box-sizing: border-box;
+    border: 1px solid #888;
+    font-size: 16px;
+    margin: 2px;
+  }
+  /* Control cell: the CSS the site SHOULD have used to be cross-browser. */
+  .otp-field-input.textfield {
+    -webkit-appearance: textfield;
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  code { background:#eee; padding:1px 3px; }
+</style>
+</head>
+<body>
+<h1>OTP cell: input[type=number] with appearance:none</h1>
+
+<p>
+  <b>What should happen:</b> six narrow (25px) <code>&lt;input type="number"&gt;</code>
+  cells styled with <code>appearance:none</code>. The site uses
+  <code>appearance:none</code> intending to remove the native number
+  spin-button so a single typed digit fills each tiny cell.
+</p>
+<p>
+  <b>Chrome:</b> honours <code>appearance:none</code> and removes the
+  spin-button, so each cell keeps a content box (clientWidth &gt; 0) and the
+  typed digit "8" is visible and centered.
+</p>
+<p>
+  <b>Firefox:</b> does <i>not</i> remove the <code>input[type=number]</code>
+  spin-button for <code>appearance:none</code> (only
+  <code>appearance:textfield</code> / <code>-moz-appearance:textfield</code>
+  does that). The spin-button is laid out inside the 25px cell and consumes
+  the whole content box, so clientWidth === 0: the cell shows only up/down
+  spinner arrows ("drop-down") and the digit has no room to render.
+</p>
+
+<h2>Row A — appearance:none (like the real site)</h2>
+<div id="rowNone">
+  <input class="otp-field-input" type="number" value="8">
+  <input class="otp-field-input" type="number" value="8">
+  <input class="otp-field-input" type="number" value="8">
+  <input class="otp-field-input" type="number" value="8">
+  <input class="otp-field-input" type="number" value="8">
+  <input class="otp-field-input" type="number" value="8">
+</div>
+
+<h2>Row B — control: same width, appearance:textfield</h2>
+<div id="rowTextfield">
+  <input class="otp-field-input textfield" type="number" value="8">
+  <input class="otp-field-input textfield" type="number" value="8">
+</div>
+
+<h2>Row C — control: type=text (no spin-button at all)</h2>
+<div id="rowText">
+  <input class="otp-field-input" type="text" value="8">
+  <input class="otp-field-input" type="text" value="8">
+</div>
+
+<pre id="out"></pre>
+<script>
+  function measure(sel) {
+    return [...document.querySelectorAll(sel)].map(function (i) {
+      return {
+        type: i.type,
+        appearance: getComputedStyle(i).appearance,
+        offsetWidth: i.offsetWidth,
+        clientWidth: i.clientWidth
+      };
+    });
+  }
+  window.__probe = function () {
+    return {
+      none: measure('#rowNone .otp-field-input'),
+      textfield: measure('#rowTextfield .otp-field-input'),
+      text: measure('#rowText .otp-field-input')
+    };
+  };
+  document.getElementById('out').textContent = JSON.stringify(window.__probe(), null, 2);
+</script>
+</body>
+</html>

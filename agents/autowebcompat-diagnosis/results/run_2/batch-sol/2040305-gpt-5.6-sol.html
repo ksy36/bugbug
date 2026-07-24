@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Redundant fragment navigation :target reduction</title>
+<style>
+  #login { visibility: hidden; opacity: 0; }
+  #login:target { visibility: visible; opacity: 1; }
+</style>
+<p>
+  Load this file with <code>#login</code> appended. The green box should remain
+  visible after a deferred module redundantly navigates to <code>#login</code>
+  and replaces the target with an equivalent node (reducing the site's Vue
+  mount lifecycle). Chrome targets the replacement; Firefox leaves the hash in
+  the URL but no element matches <code>:target</code>, so the box becomes hidden.
+</p>
+<div id="login" style="background:green;color:white;padding:2em">Member Login</div>
+<output id="result"></output>
+<script type="module">
+  {
+    const oldLogin = document.getElementById("login");
+    location.href = "#login";
+    oldLogin.replaceWith(oldLogin.cloneNode(true));
+    const login = document.getElementById("login");
+    result.value = JSON.stringify({
+      hash: location.hash,
+      matchesTarget: login.matches(":target"),
+      selectedTarget: document.querySelector(":target")?.id || null,
+      visibility: getComputedStyle(login).visibility,
+      opacity: getComputedStyle(login).opacity
+    });
+  }
+</script>

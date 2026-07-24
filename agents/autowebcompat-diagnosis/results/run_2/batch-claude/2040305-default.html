@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>:target lost after fragment-target node is replaced — Firefox vs Chrome</title>
+<!--
+  MINIMAL REPRO of www.centuryasia.com.tw "Member Login" pop-up failing in Firefox.
+
+  The real site shows its login modal purely with CSS :target :
+      .modal        { visibility: hidden; opacity: 0; }
+      .modal:target { visibility: visible; opacity: 1; }
+
+  VERIFIED FACTS about the real page:
+    * Its server HTML already contains  <div class="modal" id="login"> .
+      (Confirmed by fetching the document: id="login" is at byte 11926.)
+    * The page is a Vue app. When Vue mounts (at DOMContentLoaded) it re-renders
+      the region containing #login, which REMOVES the original #login node and
+      INSERTS a fresh #login node in its place.
+    * Live probe: in Chrome  #login.matches(':target') === true  (modal visible);
+      in Firefox #login.matches(':target') === false (modal hidden), even though
+      location.hash === "#login" and an element with id="login" exists.
+
+  This file reproduces that sequence with no framework:
+    1. Load the document with the URL fragment "#login".
+    2. An element id="login" IS present in the initial HTML, so at navigation
+       time BOTH browsers resolve the fragment target to that original node.
+    3. At DOMContentLoaded (exactly when Vue mounts on the real site) JS removes
+       the original #login node and appends a NEW node that also has id="login".
+
+  EXPECTED — the site author's intent, and what CHROME does:
+    On replacement Chrome re-resolves the URL fragment to the new #login node,
+    so it matches :target, ".modal:target" applies, and the box is VISIBLE
+    (turns green, text "VISIBLE").
+
+  FIREFOX DIFFERENCE — the reported bug:
+    Firefox bound the "indicated part" / :target to the ORIGINAL #login node at
+    navigation time. When that node is removed, Firefox does NOT re-resolve the
+    fragment to the newly-inserted node with the same id. The replacement #login
+    therefore never matches :target, the visible rule never applies, and the box
+    stays hidden (visibility:hidden / opacity:0) — the "Member Login" pop-up is
+    missing. (Re-navigating, e.g. location.hash='' then location.hash='#login',
+    makes Firefox re-resolve and the modal appears — confirming a stale target,
+    not a missing element.)
+
+  Observable divergence (see #status and window.__repro):
+    Chrome  -> matches(':target')=true,  VISIBLE
+    Firefox -> matches(':target')=false, HIDDEN
+-->
+<style>
+  .modal {
+    visibility: hidden;
+    opacity: 0;
+    background: #c0392b;   /* red   = hidden  / bug   */
+    color: #fff;
+    padding: 20px;
+    font: 16px sans-serif;
+  }
+  .modal:target {
+    visibility: visible;
+    opacity: 1;
+    background: #27ae60;   /* green = visible / works */
+  }
+  #status { font: 14px monospace; white-space: pre; margin-top: 20px; }
+</style>
+</head>
+<body>
+<h1>:target after fragment-target node replacement</h1>
+<p>The URL must contain the fragment <code>#login</code>.</p>
+
+<div id="container">
+  <!-- ORIGINAL #login: present in the initial HTML (as on the real site), so the
+       fragment target resolves to it at navigation time in BOTH browsers. -->
+  <div class="modal" id="login">Original #login (from initial HTML)</div>
+</div>
+
+<output id="status">waiting…</output>
+
+<script>
+  // Simulate Vue mounting at DOMContentLoaded and re-rendering the subtree:
+  // remove the original #login node and insert a fresh node with the same id.
+  document.addEventListener('DOMContentLoaded', function () {
+    var container = document.getElementById('container');
+    document.getElementById('login').remove();
+
+    var fresh = document.createElement('div');
+    fresh.id = 'login';
+    fresh.className = 'modal';
+    fresh.textContent = 'Replacement #login (inserted by re-render, like Vue)';
+    container.appendChild(fresh);
+  });
+
+  // Report the outcome once everything has settled.
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      var el = document.getElementById('login');
+      var cs = getComputedStyle(el);
+      var matches = false;
+      try { matches = el.matches(':target'); } catch (e) {}
+      var visible = cs.visibility === 'visible' && parseFloat(cs.opacity) > 0;
+      document.getElementById('status').textContent =
+        'location.hash      = ' + location.hash + '\n' +
+        'element id present = ' + (el.id === 'login') + '\n' +
+        "matches(':target') = " + matches + '\n' +
+        'visibility         = ' + cs.visibility + '\n' +
+        'opacity            = ' + cs.opacity + '\n' +
+        'RESULT             = ' + (visible ? 'VISIBLE (Chrome, correct)'
+                                           : 'HIDDEN (Firefox, bug)');
+      window.__repro = { hash: location.hash, matches: matches,
+                         visibility: cs.visibility, opacity: cs.opacity,
+                         visible: visible };
+    }, 50);
+  });
+</script>
+</body>
+</html>

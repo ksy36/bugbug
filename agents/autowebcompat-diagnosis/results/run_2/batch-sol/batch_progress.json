@@ -1,0 +1,94 @@
+{
+  "num_turns": 234,
+  "total_cost_usd": null,
+  "backend": "codex",
+  "model": "gpt-5.6-sol",
+  "entries": [
+    {
+      "bug_id": 2053077,
+      "status": "succeeded",
+      "backend": "codex",
+      "model": "gpt-5.6-sol",
+      "num_turns": 52,
+      "total_cost_usd": null,
+      "usage": {
+        "input": 1812244,
+        "cached_input": 1737221,
+        "output": 8827,
+        "reasoning_output": 2247,
+        "total": 1821071
+      },
+      "result": {
+        "root_cause": "Not diagnosed: the issue did not reproduce.",
+        "firefox_findings": "Firefox loaded the real application and rendered #email plus an enabled Get OTP button. After entering test34@mail.com and clicking, #email retained the value, the button remained enabled, no visible error/success message appeared, no matching OTP/email/applySubmit response occurred after the click, and the DOM contained zero .otp-field-input elements after 15 seconds. Console evidence included \u201cError occured while enhancing element\u201d; failed requests were only Phenom tracking requests with NS_ERROR_FAILURE. Thus neither spinner/drop-down OTP fields nor lost digits were observable.",
+        "chrome_findings": "Chrome followed the identical flow and produced the same application result: the email value was retained, Get OTP remained enabled, there was no visible status message, no matching OTP/email/applySubmit response after the click, and zero .otp-field-input elements. Its unrelated failures were an accessibility-config 404 and aborted LinkedIn resources. Because neither browser revealed OTP controls, there was no observable Firefox/Chrome rendering or input-value difference.",
+        "difference": "The reported Firefox/Chrome OTP-field divergence could not be reproduced against the current live Abbott application. In both Firefox 153 and Chrome 151, the email step rendered and accepted test34@mail.com, but clicking Get OTP produced no OTP-generation request, no status/error message, and no .otp-field-input controls. The live behavior was therefore the same in both browsers. Inspection of the site's shipped OTP widget bundle shows that, when enabled, it creates controls using the configured typeOfOtp and records input from nativeEvent.data; that is consistent with the historical symptom for type=number in Firefox, but it is only a code-level inference because the live site did not expose the controls.",
+        "confidence": "n/a: not reproduced",
+        "steps": "1. Open https://www.jobs.abbott/us/en/apply?jobSeqNo=ABLAUS31152679ENUSEXTERNAL&step=1&stepname=applicantAcknowledgment in a clean, headless Firefox instance.\n2. Wait for #email, dismiss the cookie consent control if present, enter the report-provided address test34@mail.com, blur the field, and click Get OTP.\n3. Wait up to 15 seconds while collecting console errors, failed requests, relevant post-click responses, visible widget messages, and .otp-field-input DOM/computed-style/value evidence.\n4. Repeat exactly the same sequence in a clean, headless Chrome instance.\n5. Run NODE_PATH=/app/node/node_modules node /tmp/autowebcompat-diagnosis-2o97fn2c/2053077-gpt-5.6-sol.repro.mjs; the verified run exited successfully and printed Firefox FAIL, Chrome FAIL, and Difference reproduced: NO.",
+        "testcase_created": false,
+        "reproduced": false,
+        "testcase_url": null,
+        "puppeteer_script_url": "2053077-gpt-5.6-sol.repro.mjs"
+      },
+      "error": null
+    },
+    {
+      "bug_id": 2040305,
+      "status": "succeeded",
+      "backend": "codex",
+      "model": "gpt-5.6-sol",
+      "num_turns": 118,
+      "total_cost_usd": null,
+      "usage": {
+        "input": 1966531,
+        "cached_input": 1867216,
+        "output": 17390,
+        "reasoning_output": 3904,
+        "total": 1983921
+      },
+      "result": {
+        "root_cause": "The failure is an engine difference in fragment-target bookkeeping across the site's Vue mount sequence. login.js runs `window.location.href = '#login'` from Vue's created() hook, and Vue subsequently patches/replaces DOM during deferred mounting. Firefox keeps the target association on the pre-patch element (which is removed), so the URL still says #login but no current element matches :target. Chrome re-resolves the replacement element with id=login. Because the modal is hidden by default and revealed only by `.modal:target`, Firefox's stale/cleared target state directly causes the missing login dialog. The reduced test performs the same essential sequence\u2014deferred same-fragment navigation followed by replacing #login with an equivalent node\u2014and produces Firefox target=null/hidden versus Chrome target=login/visible.",
+        "firefox_findings": "On the live URL, Firefox reports location.hash === '#login' and the login form DOM is present, but #login.matches(':target') is false, document.querySelector(':target') is null, and the computed modal style is visibility:hidden/opacity:0. The site's login.js Vue created() hook reads obj=l and executes window.location.href = '#login' while Vue is mounting/patching #main-area. The console contains a Vue template-compilation warning (also seen in Chrome) plus an unrelated `url is not defined` info message. The principal document, scripts, CSS, login API, fonts, and images loaded successfully in the DevTools run; the rsms.me font CSS returned 404 and is unrelated to the already-present login DOM.",
+        "chrome_findings": "With the same live URL and click/navigation sequence, Chrome retains #login as :target: #login.matches(':target') is true, document.querySelector(':target').id is 'login', and computed visibility/opacity are visible/1. The login form displays. The same Vue malformed-template warning occurs, so it does not itself explain the browser difference; external font handling also differs without preventing the modal.",
+        "difference": "Both engines have the same #login DOM and '#login' fragment, and CSS visibility depends directly on `.modal:target`. During the site's Vue initialization, a redundant same-fragment navigation occurs while Vue mounts/patches the target subtree. Firefox ends with no :target element and hides the modal; Chrome resolves/retains the equivalent #login element as :target and shows it. A standalone deferred-mount reduction reproduces exactly this Firefox hidden/Chrome visible divergence.",
+        "confidence": "high \u2014 the live script exposes the triggering same-fragment navigation, CSS directly maps lost :target state to invisibility, and the standalone lifecycle reduction reproduces the exact engine divergence.",
+        "steps": "1. Read `/tmp/autowebcompat-diagnosis-4ls7swdp/2040305-gpt-5.6-sol.repro.mjs`, which navigates both installed browsers to `https://www.centuryasia.com.tw/login.html?obj=l&obj1=i&ver=I+DfKKUJFcA=#login`, probes :target/computed styles, and clicks the real `.user-login a` control.\n2. Re-ran it with `NODE_PATH=/app/node/node_modules node /tmp/autowebcompat-diagnosis-4ls7swdp/2040305-gpt-5.6-sol.repro.mjs` and confirmed Firefox hidden/no target versus Chrome visible/#login target on load and after click.\n3. Inspected the live HTML/CSS and found the existing `div#login` plus the `.modal` hidden defaults and `.modal:target` visible rule.\n4. Inspected `https://www.centuryasia.com.tw/js/login.js?0fKKApRlrx8=` and found Vue's created() hook executes `window.location.href = '#login'` when query parameter `obj` is `l`.\n5. Used Firefox DevTools evaluate_script on the live page to confirm hash `#login`, present form controls, no selected :target, and hidden/0 computed styles; inspected its console and network requests to rule out the shared Vue warning and unrelated font request.\n6. Compared the same DOM/runtime probes in Chrome, where the current #login is :target and visible/1.\n7. Wrote `/tmp/autowebcompat-diagnosis-4ls7swdp/2040305-gpt-5.6-sol.html`, reducing the lifecycle to a deferred module that redundantly navigates to #login and replaces the target node with an equivalent node.\n8. Loaded `file:///tmp/autowebcompat-diagnosis-4ls7swdp/2040305-gpt-5.6-sol.html?obj=l#login` in both DevTools browsers and confirmed Firefox returns target=false/null and hidden/0 while Chrome returns target=true/login and visible/1.",
+        "testcase_created": true,
+        "reproduced": true,
+        "testcase_url": "2040305-gpt-5.6-sol.html",
+        "puppeteer_script_url": "2040305-gpt-5.6-sol.repro.mjs"
+      },
+      "error": null
+    },
+    {
+      "bug_id": 2052489,
+      "status": "succeeded",
+      "backend": "codex",
+      "model": "gpt-5.6-sol",
+      "num_turns": 64,
+      "total_cost_usd": null,
+      "usage": {
+        "input": 824815,
+        "cached_input": 700036,
+        "output": 8296,
+        "reasoning_output": 821,
+        "total": 833111
+      },
+      "result": {
+        "root_cause": "The site leaves the replaced `<iframe>` auto-sized (no CSS width and no width/height attributes) and relies on Chrome's sizing behavior for a flex item with `aspect-ratio:16/9`. Firefox resolves the iframe's auto flex main size from its default intrinsic/replaced-element size of 300px and then derives its 168.75px height from the aspect ratio, whereas Chrome expands the auto-sized iframe to the available container width and derives its height. The reduced variant matrix shows the divergence with `aspect-ratio` alone: in an 800x600 centered flex container Firefox gives 310x174.38 including borders while Chrome gives 800x450; removing either or both max-size declarations does not change it. Thus the broken game layout is an iframe/flex/aspect-ratio intrinsic-sizing interoperability difference exposed by the site's underspecified auto width.",
+        "firefox_findings": "On https://drmeth.com/ at a 1280x900 viewport, Firefox 153 renders the game iframe at 300x168.75 CSS px (the reduced test is 310x174.38 including its 5px border). The iframe has no width/height attributes; computed styles are width 300px, height 168.75px, aspect-ratio 16 / 9, max-width 100%, and max-height 100%, inside a centered flex container. CSS.supports('aspect-ratio:16/9') is true, the markup is identical to Chrome, and the UA is the ordinary Firefox UA. The real-page console only reports 'Initializing auth app'; the captured real-site network traffic loads game assets successfully with 2xx statuses and the prior reproduction found no failed or >=400 requests.",
+        "chrome_findings": "On the same URL and nominal 1280x900 viewport, Chrome 151 renders the identical iframe at 1280x720 CSS px. It has the same missing width/height attributes and the same computed aspect-ratio and max-size declarations, but its computed used width becomes 1280px rather than Firefox's 300px. On the local reduced test Chrome renders the iframe at 1280x720 (and 800x450 in an 800x600 scripted variant container), with no console messages and only the successful local document request.",
+        "difference": "The engines receive identical markup and support the declarations, but resolve the auto main size of a replaced iframe with `aspect-ratio` inside a centered row flex container differently. Firefox retains the iframe's default replaced-element width (300px); Chrome uses the available flex-container width (1280px on the test page, 800px in the variant probe) and derives 16:9 height. Explicit `width:100%` makes both engines produce 800x450, demonstrating that the divergence is sizing resolution, not game content, networking, JavaScript, or UA sniffing.",
+        "confidence": "high \u2014 the real-page computed-style comparison and a dependency-reduced local test reproduce the exact 300px-versus-container-width divergence, while console, network, feature support, markup, and UA-path alternatives were excluded.",
+        "steps": "1. Read `/tmp/autowebcompat-diagnosis-0fx41b51/2052489-gpt-5.6-sol.repro.mjs`, the verified Puppeteer script supplied by the reproduction stage, to identify the exact URL, viewport, selector, and initial measurements.\n2. Loaded `https://drmeth.com/` with Firefox DevTools and Chrome DevTools, set each browser to a 1280x900 viewport, and queried `iframe[src=\"/game/index.html\"]` plus its parent using `getBoundingClientRect()` and `getComputedStyle()`.\n3. Compared the returned markup, user agents, `CSS.supports(\"aspect-ratio:16/9\")`, computed width/height/aspect-ratio/max sizes, and flex-parent properties; observed Firefox 300x168.75 versus Chrome 1280x720 despite identical relevant inputs.\n4. Inspected console and network collections in both browsers; found no layout-causing exception or failed game resource, consistent with the verified reproduction's zero Firefox request failures and zero HTTP >=400 responses.\n5. Created `/tmp/autowebcompat-diagnosis-0fx41b51/2052489-gpt-5.6-sol.html` as a self-contained reduction containing an auto-sized iframe with `aspect-ratio:16/9; max-width:100%; max-height:100%` centered in a flex container, plus an inline explanation.\n6. Loaded that exact `file:///tmp/autowebcompat-diagnosis-0fx41b51/2052489-gpt-5.6-sol.html` URL in both DevTools browsers and measured Firefox at 310x174.38 including a 5px border versus Chrome at 1280x720.\n7. Used `evaluate_script` on the reduced page to create 800x600 flex containers and compare baseline, removed-max-height, removed-max-width, aspect-ratio-only, and explicit-width variants; all auto-width variants remained 310x174.38 in Firefox and 800x450 in Chrome, while `width:100%` made both 800x450.",
+        "testcase_created": true,
+        "reproduced": true,
+        "testcase_url": "2052489-gpt-5.6-sol.html",
+        "puppeteer_script_url": "2052489-gpt-5.6-sol.repro.mjs"
+      },
+      "error": null
+    }
+  ],
+  "start_time": "2026-07-24T14:26:27.777346",
+  "end_time": "2026-07-24T14:49:21.313154"
+}

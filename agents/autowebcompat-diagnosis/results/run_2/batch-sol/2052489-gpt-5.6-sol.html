@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Reduced iframe flex sizing difference</title>
+<style>
+  * { box-sizing: border-box }
+  body { margin: 0; font: 16px sans-serif }
+  p { height: 64px; margin: 0; padding: 12px }
+  .container {
+    width: 100vw;
+    height: calc(100vh - 64px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ddd;
+  }
+  iframe {
+    aspect-ratio: 16 / 9;
+    max-width: 100%;
+    max-height: 100%;
+    border: 5px solid red;
+    background: white;
+  }
+</style>
+<p>This iframe has no width/height attributes. Chrome expands it to the container width (subject to the 16:9 ratio and max sizes); Firefox retains the iframe's 300px default width, leaving a small centered box.</p>
+<div class="container"><iframe srcdoc="<h1>iframe content</h1>"></iframe></div>

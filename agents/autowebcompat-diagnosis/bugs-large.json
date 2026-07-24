@@ -238,5 +238,15 @@
     "id": 1958462,
     "summary": "lsh-catering.de - Page elements missing on first load",
     "description": "**Environment:**\nOperating system: Android 13/Windows 10\nFirefox version: Firefox 136.0/138/139\n\n**Steps to reproduce:**\n1. Go to https://lsh-catering.de/\n2. Scroll down the page below the \"NEWS\" and \"Genuss\" section.\n3. Observe the layout.\n\n**Expected Behavior:**\nThe page is rendered correctly.\n\n**Actual Behavior:**\nSome page elements are missing from some sections.\n\n**Notes:**\n- On mobile it reproduces only on Release but the elements are missing even after refresh, on Beta and Nightly mobile the page elements load even on the first load\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/151643"
+  },
+  {
+    "id": 2056511,
+    "summary": "sidesplitterscomedy.com - Buttons are not fully rendered nor functional",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 152.0/155\n\n**Steps to reproduce:**\n1. Go to https://sidesplitterscomedy.com/\n2. Observe the buttons.\n\n**Expected Behavior:**\nThe buttons are fully rendered. (and functional)\n\n**Actual Behavior:**\nThe buttons are not fully rendered nor functional.\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/228822"
+  },
+  {
+    "id": 2056486,
+    "summary": "parrotessentials.co.uk - Header navigation drop-down menus missing, preventing access to subcategories",
+    "description": "**Environment:**\nOperating system: Windows 10\nFirefox version: Firefox 152.0 / 155.0a1 (2026-07-20)\n\n**Steps to reproduce:**\n1. Access: https://parrotessentials.co.uk/account.php?action=order_status\n2. Observe the buttons of the header navigation menu\n\n**Expected Behavior:**\nHeader navigation drop-down menus are displayed accordingly and the subcategories are displayed correclty\n\n**Actual Behavior:**\nHeader navigation drop-down menus missing, preventing access to subcategories\n\n**Notes:**\n- Reproduces regardless of the status of ETP\n- Reproduces in firefox-nightly, and firefox-release\n- Does not reproduce in chrome\n\nCreated from https://github.com/webcompat/web-bugs/issues/229091"
   }
 ]
