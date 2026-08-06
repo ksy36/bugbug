@@ -195,6 +195,28 @@ class BugReproductionResult(ReproductionResult):
         return self
 
 
+class ScriptReviewResult(BaseModel):
+    """Safety review of a confirmation script before it is published."""
+
+    safe_to_publish: bool = Field(
+        description=(
+            "true if the script only drives the reported site through Puppeteer "
+            "and can be run by someone else without risk. false if anything in "
+            "it does something other than reproducing the reported issue."
+        ),
+    )
+
+    concerns: list[str] = Field(
+        description=(
+            "One entry per problem found, each naming the construct and why it "
+            "does not belong — e.g. an import other than puppeteer, a shell or "
+            "filesystem call, a request to a host unrelated to the report, or "
+            "code that does not correspond to any reported reproduction step. "
+            "Empty when `safe_to_publish` is true."
+        ),
+    )
+
+
 class ChromeMaskResult(BaseModel):
     chrome_mask_fixed: bool | None = Field(
         description=(

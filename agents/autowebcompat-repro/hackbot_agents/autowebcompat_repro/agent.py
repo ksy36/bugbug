@@ -40,6 +40,7 @@ from .result import (
     ReproductionResult,
     ResultCollector,
     ResultT,
+    ScriptReviewResult,
     TestPlanResult,
     build_result_server,
 )
@@ -455,6 +456,56 @@ class BugReproduction(Task):
             )
 
 
+class ScriptReview(Task):
+    """Reviews a confirmation script before it is published for others to run.
+
+    Gets no browser: it only reads the script and the report it came from.
+    """
+
+    name = "script_review"
+    result_cls = ScriptReviewResult
+
+    def __init__(
+        self,
+        task_config: TaskConfig,
+        run_tracker: RunTracker,
+        script_path: Path,
+        input_data: AutoWebcompatInput,
+    ):
+        super().__init__(task_config, run_tracker)
+        self.script_path = script_path
+        self.input_data = input_data
+
+    def subject(self) -> Any:
+        return self.script_path
+
+    def system_prompt(self) -> str:
+        return (
+            (HERE / "prompts" / "script_review.md")
+            .read_text()
+            .format(
+                task_details=f"""
+1. Read the script at `{self.script_path}`.
+2. Check it against the report below and the rules above.
+3. Submit your findings via `submit_result` (see "Reporting your result").
+"""
+            )
+        )
+
+    def user_prompt(self) -> str:
+        if isinstance(self.input_data, BugDataInput):
+            return (
+                "The script was written to reproduce this report:\n\n"
+                f"{self.input_data.bug_data}\n\n"
+                "Follow your task procedure."
+            )
+        return (
+            f"The script was written to reproduce Bugzilla bug "
+            f"{self.input_data.bug_id}. Follow your task procedure; judge the "
+            "script on whether it only drives the site it navigates to."
+        )
+
+
 class StepsReproduction(Task):
     name = "steps_reproduction"
     result_cls = ReproductionResult
@@ -777,7 +828,35 @@ async def run_autowebcompat_repro(
                 profile,
                 initial_repro.steps,
             )
+        wrote_script = isinstance(task, BugReproduction)
         repro_results.set_result(channel, extra, await task.run())
+        if wrote_script:
+            await review_script()
+
+    async def review_script() -> None:
+        """Drop a script that a reviewer won't clear for others to run.
+
+        The script is written by an agent that has been reading the reported
+        site, and is published for other people and agents to run on their own
+        machines, so it is checked before it goes anywhere or gets reused for
+        another channel.
+        """
+        initial_repro = repro_results.initial_repro
+        if initial_repro is None or initial_repro.script_path is None:
+            return
+
+        review = await ScriptReview(
+            default_config, tracker, initial_repro.script_path, input_data
+        ).run()
+        if review.safe_to_publish:
+            return
+
+        logger.warning(
+            "Discarding confirmation script %s: %s",
+            initial_repro.script_path,
+            "; ".join(review.concerns) or "review raised no specific concern",
+        )
+        initial_repro.script_path = None
 
     screenshots_dir = Path(tempfile.mkdtemp(prefix="autowebcompat-screenshots-"))
 
