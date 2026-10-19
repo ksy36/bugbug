@@ -101,11 +101,12 @@ RUN set -eux; \
     # The data partition must be sized at creation: editing config.ini later
     # does not resize an existing userdata image, and the default leaves too
     # little room for the ~130MB Fenix APK plus dexopt.
+    mkdir -p "$ANDROID_AVD_HOME"; \
     echo no | avdmanager create avd --force \
-        --name "$ANDROID_AVD_NAME" --package "$image"; \
+        --name "$ANDROID_AVD_NAME" --package "$image" \
+        --path "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"; \
     printf 'disk.dataPartition.size=12G\nhw.ramSize=4096\n' \
         >> "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd/config.ini"
-
 ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH"
 
 # Install the DevTools MCP servers and Puppeteer from the pinned
@@ -126,7 +127,7 @@ COPY agents/autowebcompat-repro/hackbot.toml /app/hackbot.toml
 RUN useradd --create-home --shell /bin/bash agent \
     && mkdir -p /workspace \
     && chown agent:agent /workspace /app/repro \
-    && chown -R agent:agent /opt/android-sdk/.android
+    && chown -R agent:agent /opt/android-sdk/.android /opt/android-sdk/emulator
 
 ENV SCREEN_WIDTH=1280
 ENV SCREEN_HEIGHT=1024
