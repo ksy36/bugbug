@@ -1,0 +1,31 @@
+name: android-emulator-smoke
+
+on:
+  workflow_dispatch:
+  # ponytail: also runs on push while iterating; drop once green.
+  push:
+    paths:
+      - 'agents/autowebcompat-repro/**'
+      - '.github/workflows/android-emulator-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check KVM
+        run: ls -l /dev/kvm
+
+      - name: Build agent image
+        run: |
+          docker build -f agents/autowebcompat-repro/Dockerfile \
+            --target agent -t awc-agent .
+
+      - name: Drive both browsers via their MCP servers
+        run: |
+          docker run --rm --device /dev/kvm \
+            --group-add "$(getent group kvm | cut -d: -f3)" \
+            -v "$PWD/agents/autowebcompat-repro/smoke_android.py:/app/smoke_android.py:ro" \
+            -w /app awc-agent python smoke_android.py

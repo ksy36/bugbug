@@ -50,7 +50,63 @@ RUN apt-get update \
         # Window manager and display backend
         fluxbox \
         xvfb \
+        # Android SDK tooling: sdkmanager/avdmanager are Java programs, and
+        # unzip unpacks the command-line tools.
+        unzip \
+        default-jre-headless \
+        # Shared libraries the emulator binary dlopens even with -no-window.
+        libpulse0 libxkbfile1 libglu1-mesa \
     && rm -rf /var/lib/apt/lists/*
+
+# Install the Android SDK and create the AVD at build time. Doing this at
+# runtime instead would add minutes to every run; baking it in means container
+# start goes straight to booting the emulator. The emulator still needs
+# /dev/kvm from the host at runtime, which is granted by the deployment (see
+# compose.yml), not by the build.
+ENV ANDROID_SDK_ROOT=/opt/android-sdk \
+    ANDROID_HOME=/opt/android-sdk \
+    ANDROID_AVD_HOME=/opt/android-sdk/.android/avd \
+    ANDROID_EMULATOR_HOME=/opt/android-sdk/.android \
+    ANDROID_AVD_NAME=webcompat
+
+# Google publishes the emulator for linux-x86_64 only; there is no
+# linux-aarch64 build, so the agent image must be built for amd64 to run the
+# emulator. The system image ABI is derived from the build platform so the
+# image stays correct if that ever changes.
+ARG ANDROID_API=34
+ARG CMDLINE_TOOLS_VERSION=11076708
+ARG TARGETARCH
+
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) abi=x86_64 ;; \
+        arm64) abi=arm64-v8a ;; \
+        *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"; \
+    curl -fsSL -o /tmp/cmdline-tools.zip \
+        "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"; \
+    unzip -q /tmp/cmdline-tools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"; \
+    mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" \
+       "$ANDROID_SDK_ROOT/cmdline-tools/latest"; \
+    rm /tmp/cmdline-tools.zip; \
+    export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"; \
+    yes | sdkmanager --licenses > /dev/null; \
+    # google_apis_playstore ships Chrome preinstalled, which provides the
+    # cross-check browser: Google does not distribute Chrome APKs for
+    # sideloading.
+    image="system-images;android-${ANDROID_API};google_apis_playstore;${abi}"; \
+    sdkmanager --install "platform-tools" "emulator" \
+        "platforms;android-${ANDROID_API}" "$image" > /dev/null; \
+    # The data partition must be sized at creation: editing config.ini later
+    # does not resize an existing userdata image, and the default leaves too
+    # little room for the ~130MB Fenix APK plus dexopt.
+    echo no | avdmanager create avd --force \
+        --name "$ANDROID_AVD_NAME" --package "$image"; \
+    printf 'disk.dataPartition.size=12G\nhw.ramSize=4096\n' \
+        >> "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd/config.ini"
+
+ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH"
 
 # Install the DevTools MCP servers and Puppeteer from the pinned
 # package.json/lockfile.
@@ -64,9 +120,13 @@ RUN cd /app/repro && npm ci --omit=dev
 # the working dir; the runtime discovers it there (cwd) at startup.
 COPY agents/autowebcompat-repro/hackbot.toml /app/hackbot.toml
 
+# The emulator writes to the AVD's disk images at runtime, so the agent user
+# needs to own them. A fresh container restores the pristine AVD from the
+# image layer, so state does not leak between runs.
 RUN useradd --create-home --shell /bin/bash agent \
     && mkdir -p /workspace \
-    && chown agent:agent /workspace /app/repro
+    && chown agent:agent /workspace /app/repro \
+    && chown -R agent:agent /opt/android-sdk/.android
 
 ENV SCREEN_WIDTH=1280
 ENV SCREEN_HEIGHT=1024

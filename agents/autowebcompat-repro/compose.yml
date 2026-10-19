@@ -15,6 +15,17 @@ services:
       context: ../..
       dockerfile: agents/autowebcompat-repro/Dockerfile
       target: agent
+    # The Android emulator needs KVM to be usable. Pass the host's KVM device
+    # through and add the (non-root) agent process to the host's kvm group so
+    # it can open the device. The group's GID varies per host, so supply it
+    # via KVM_GID in .env:
+    #   echo "KVM_GID=$(getent group kvm | cut -d: -f3)" >> .env
+    # This requires a Linux host with /dev/kvm: Docker Desktop on macOS does
+    # not expose it, and nested virtualization needs a CPU that supports it.
+    devices:
+      - /dev/kvm
+    group_add:
+      - "${KVM_GID:?set KVM_GID in .env, e.g. getent group kvm | cut -d: -f3}"
     environment:
       - RUN_ID
       - BUG_DATA

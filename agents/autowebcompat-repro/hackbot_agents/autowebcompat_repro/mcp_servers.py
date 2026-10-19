@@ -70,6 +70,58 @@ def build_firefox_devtools_server(
     return McpStdioServerConfig(command=command, args=args)
 
 
+def build_android_firefox_devtools_server(
+    package: str,
+    device_serial: str,
+    *,
+    enable_script: bool = True,
+) -> McpStdioServerConfig:
+    """Build the stdio config for the Firefox DevTools MCP in Android mode.
+
+    Android mode drives Fenix on a device over geckodriver and ADB, which
+    handles the host/device port forwarding itself. It accepts none of the
+    desktop launch options: there is no binary path, no profile template and no
+    headless flag, since the browser is installed on the device and has no
+    visible window on the host either way.
+
+    Args:
+        package: Android package to drive, e.g. ``org.mozilla.fenix`` for
+            Nightly or ``org.mozilla.firefox`` for release.
+        device_serial: ADB device serial, e.g. ``emulator-5554``.
+        enable_script: Expose the ``evaluate_script`` tool, which runs
+            arbitrary JS in the page context.
+    """
+    args = ["--android-device", device_serial, "--android-package", package]
+    if enable_script:
+        args.append("--enable-script")
+
+    return McpStdioServerConfig(
+        command=resolve_bin("firefox-devtools-mcp-moz"), args=args
+    )
+
+
+def build_android_chrome_devtools_server(ws_endpoint: str) -> McpStdioServerConfig:
+    """Build the stdio config for the Chrome DevTools MCP in Android mode.
+
+    Unlike desktop, the MCP server cannot launch Chrome for Android: the
+    browser must already be running with its DevTools socket forwarded to a
+    host port (see ``android.forward_chrome_devtools``), and the server
+    attaches to it over that websocket.
+
+    Args:
+        ws_endpoint: The forwarded DevTools websocket URL, e.g.
+            ``ws://127.0.0.1:9222/devtools/browser``.
+    """
+    args = [
+        "--wsEndpoint",
+        ws_endpoint,
+        # Opt out of the MCP server's own data collection, as on desktop.
+        "--usageStatistics=false",
+        "--performanceCrux=false",
+    ]
+    return McpStdioServerConfig(command=resolve_bin("chrome-devtools-mcp"), args=args)
+
+
 def build_chrome_devtools_server(
     chrome_path: Path | None = None,
     *,

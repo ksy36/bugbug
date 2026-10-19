@@ -42,6 +42,20 @@ DEVTOOLS_TOOLS = [
     "mcp__firefox-devtools__get_firefox_output",
 ]
 
+# Firefox DevTools MCP tools when driving Fenix on a device. The same server
+# as DEVTOOLS_TOOLS in Android mode, minus the tools that only mean something
+# for a desktop window: the viewport is the device screen, and the Firefox
+# binary is on the device rather than one we launched.
+ANDROID_DEVTOOLS_TOOLS = [
+    tool
+    for tool in DEVTOOLS_TOOLS
+    if tool
+    not in {
+        "mcp__firefox-devtools__set_viewport_size",
+        "mcp__firefox-devtools__get_firefox_output",
+    }
+]
+
 # Chrome DevTools MCP tools (chrome-devtools-mcp), exposed under the
 # "chrome-devtools" server name. Web-compat reproduction subset mirroring the
 # Firefox list: page navigation, accessibility snapshots + UID-based

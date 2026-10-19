@@ -29,9 +29,21 @@ from hackbot_runtime import AgentError
 from hackbot_runtime.claude import Reporter
 from pydantic import BaseModel
 
+from . import android
+from .android_browser import AndroidBrowsers
 from .browser import ChromeBrowsers, FirefoxBrowsers
-from .config import BUGZILLA_READ_TOOLS, CHROME_DEVTOOLS_TOOLS, DEVTOOLS_TOOLS
-from .mcp_servers import build_chrome_devtools_server, build_firefox_devtools_server
+from .config import (
+    ANDROID_DEVTOOLS_TOOLS,
+    BUGZILLA_READ_TOOLS,
+    CHROME_DEVTOOLS_TOOLS,
+    DEVTOOLS_TOOLS,
+)
+from .mcp_servers import (
+    build_android_chrome_devtools_server,
+    build_android_firefox_devtools_server,
+    build_chrome_devtools_server,
+    build_firefox_devtools_server,
+)
 from .result import (
     RESULT_SERVER_NAME,
     SUBMIT_RESULT_TOOL,
@@ -513,6 +525,156 @@ class StepsReproduction(Task):
 {self.steps}"""
 
 
+class AndroidBugReproduction(Task):
+    """Initial reproduction on Android, cross-checking Fenix against Chrome.
+
+    The Android counterpart to :class:`BugReproduction`. It drives both mobile
+    browsers on the emulator so the cross-check happens in one context, but
+    omits the Puppeteer confirmation script, which drives desktop binaries via
+    ``BROWSER_BIN`` and has no on-device equivalent.
+    """
+
+    name = "android_bug_reproduction"
+    result_cls = BugReproductionResult
+
+    def __init__(
+        self,
+        task_config: TaskConfig,
+        run_tracker: RunTracker,
+        package: str,
+        chrome_ws_endpoint: str,
+        input_data: AutoWebcompatInput,
+        bugzilla_mcp_server: McpServerConfig,
+        screenshot_dir: Path,
+    ):
+        super().__init__(task_config, run_tracker)
+        self.input_data = input_data
+        self.screenshot_path = make_empty_temp_file(
+            screenshot_dir, "reproduction=", ".png"
+        )
+        self.add_mcp_server(
+            "firefox-devtools",
+            build_android_firefox_devtools_server(package, android.DEVICE_SERIAL),
+            ANDROID_DEVTOOLS_TOOLS,
+        )
+        self.add_mcp_server(
+            "chrome-devtools",
+            build_android_chrome_devtools_server(chrome_ws_endpoint),
+            CHROME_DEVTOOLS_TOOLS,
+        )
+        if self.input_data.type == "bug_id":
+            self.add_mcp_server("bugzilla", bugzilla_mcp_server, BUGZILLA_READ_TOOLS)
+
+    def subject(self) -> Any:
+        return self.input_data.subject()
+
+    def system_prompt(self) -> str:
+        return (
+            super()
+            .system_prompt()
+            .format(
+                task_details=f"""
+You are testing on Firefox for Android running on an Android emulator, not on
+desktop. The viewport is a phone screen and the sites you visit may serve
+their mobile layout.
+
+1. Identify the affected URL and the described broken behavior.
+2. Baseline: Navigate to the URL with the Firefox DevTools MCP
+   and try to reproduce the described broken behaviour.
+   - Reproduce against the actual reported site. If you cannot reach or
+     reproduce on that site — e.g. it is behind a login wall, blocked,
+     gated by a captcha, or down — do not substitute a reduced testcase,
+     minimal example, or other bug attachment as a stand-in reproduction.
+     Report `reproduced` as false with the appropriate `failure_reason`. A
+     testcase may inform your analysis, but reproducing on it does not count
+     as reproducing the reported site issue.
+3. Cross-check in Chrome for Android: run the same steps with the Chrome
+   DevTools MCP, which is attached to Chrome on the same emulator, and report
+   `chrome_reproduced`.
+   - A genuine web-compat issue reproduces in Firefox but not in Chrome. If the
+     behavior is identical in both, your steps may be wrong; refine the steps
+     and re-check before concluding.
+   - If you confirmed that the reported broken behaviour reproduces in both browsers,
+   set `failure_reason` to `not_firefox_specific`.
+   - NOTE: Reports about the site steering users away from Firefox (a
+     "use Chrome" recommendation, an unsupported-browser warning, or a
+     user-agent-based block) are considered valid web compatibility issues even
+     if the same message displayed in Chrome. Seeing that message in Firefox
+     is the reproduction: set `reproduced` to true.
+4. Leave `script_path` null and `confirmed_by_script` false: the Puppeteer
+   confirmation script is not available on Android. Judge the reproduction on
+   the evidence you gathered in steps 2 and 3.
+5. If the issue reproduces AND the breakage is visual in nature (incorrect
+   layout or rendering, not broken interaction), capture a screenshot in Firefox
+   showing it: call `screenshot_page` with `saveTo` set to
+   `{self.screenshot_path}`. This writes the image to that file instead of
+   returning it — do not capture or paste the image data yourself. Then set
+   `screenshot_path` in your result to exactly `{self.screenshot_path}`. For
+   non-visual issues, take no screenshot and leave `screenshot_path` null.
+6. Submit your findings via `submit_result` (see "Reporting your result").
+"""
+            )
+        )
+
+    def user_prompt(self) -> str:
+        if isinstance(self.input_data, BugDataInput):
+            return (
+                "Here is the web-compatibility report to work on:\n\n"
+                f"{self.input_data.bug_data}\n\n"
+                "Follow your task procedure."
+            )
+        if isinstance(self.input_data, BugIdInput):
+            return (
+                f"The web-compatibility report to work on is Bugzilla bug {self.input_data.bug_id}. "
+                "Fetch it using the Bugzilla MCP tools, then follow your task procedure."
+            )
+
+
+class AndroidStepsReproduction(Task):
+    """Replay established steps against a second Fenix build on the device."""
+
+    name = "android_steps_reproduction"
+    result_cls = ReproductionResult
+
+    def __init__(
+        self,
+        task_config: TaskConfig,
+        run_tracker: RunTracker,
+        package: str,
+        steps: str,
+    ):
+        super().__init__(task_config, run_tracker)
+        self.steps = steps
+        self.add_mcp_server(
+            "firefox-devtools",
+            build_android_firefox_devtools_server(package, android.DEVICE_SERIAL),
+            ANDROID_DEVTOOLS_TOOLS,
+        )
+
+    def subject(self) -> Any:
+        return self.steps
+
+    def system_prompt(self) -> str:
+        return (
+            super()
+            .system_prompt()
+            .format(
+                task_details="""
+You are testing on Firefox for Android running on an Android emulator, not on
+desktop. The viewport is a phone screen and the sites you visit may serve
+their mobile layout.
+
+1. Run the reproduction steps
+2. Submit your findings via `submit_result` (see "Reporting your result").
+"""
+            )
+        )
+
+    def user_prompt(self) -> str:
+        return f"""Here are the steps to reproduce the issue:
+{self.steps}"""
+
+
 class ChromeMaskReproduction(Task):
     name = "chrome_mask"
     result_cls = ChromeMaskResult
@@ -575,6 +737,10 @@ class FirefoxChannel(Enum):
     nightly = "nightly"
     stable = "stable"
     esr = "esr"
+    # Firefox for Android channels. Nightly and release ship as separate apps,
+    # and there is no ESR channel on Android.
+    android_nightly = "android-nightly"
+    android_release = "android-release"
 
 
 @dataclass
@@ -751,6 +917,74 @@ class Environment:
                 process.kill()
 
 
+async def run_android_repro(
+    default_config: TaskConfig,
+    tracker: RunTracker,
+    input_data: AutoWebcompatInput,
+    bugzilla_mcp_server: McpServerConfig,
+    repro_results: ReproductionResults,
+    screenshots_dir: Path,
+) -> None:
+    """Reproduce an Android-only report on the emulator.
+
+    Boots the emulator, installs Fenix, and runs the reproduction against
+    Nightly and — if the plan implicates stable — release. Populates
+    ``repro_results`` in place.
+
+    Raises :class:`android.AndroidError` if the device could not be brought to
+    a usable state; the caller turns that into ``unsupported_android``.
+    """
+    browsers = AndroidBrowsers()
+
+    with android.Emulator():
+        # Chrome ships with the Play Store system image. It cannot be launched
+        # by its MCP server, so start it and forward its DevTools socket
+        # before the agent runs.
+        android.start_app(android.CHROME_PACKAGE)
+        chrome_ws_endpoint = android.forward_chrome_devtools()
+
+        async def next_repro_task(
+            channel: FirefoxChannel, android_channel: str
+        ) -> None:
+            package = browsers.package(android_channel)
+            # geckodriver's first launch of a not-yet-running Fenix fails with
+            # EAGAIN, so bring the app up before handing it the device.
+            android.start_app(package)
+
+            logger.info(
+                "Trying reproduction in Firefox for Android %s", android_channel
+            )
+            initial_repro = repro_results.initial_repro
+            if initial_repro is None:
+                task: Task = AndroidBugReproduction(
+                    default_config,
+                    tracker,
+                    package,
+                    chrome_ws_endpoint,
+                    input_data,
+                    bugzilla_mcp_server,
+                    screenshots_dir,
+                )
+            else:
+                task = AndroidStepsReproduction(
+                    default_config,
+                    tracker,
+                    package,
+                    initial_repro.steps,
+                )
+            repro_results.set_result(channel, None, await task.run())
+
+        await next_repro_task(FirefoxChannel.android_nightly, "nightly")
+
+        if repro_results.reproduced and repro_results.chrome_reproduced:
+            # Reproducing in both browsers means it isn't Firefox specific;
+            # a second Fenix build won't change that.
+            return
+
+        if "stable" in repro_results.plan_result.affects_channels:
+            await next_repro_task(FirefoxChannel.android_release, "release")
+
+
 async def run_autowebcompat_repro(
     default_config: TaskConfig,
     tracker: RunTracker,
@@ -785,6 +1019,36 @@ async def run_autowebcompat_repro(
             result = repro_results.into_result()
             result.summary = "Issue was identified as iOS only"
             result.failure_reason = "unsupported_ios"
+            return result
+
+        screenshots_dir = Path(tempfile.mkdtemp(prefix="autowebcompat-screenshots-"))
+
+        if test_plan_result.affects_platforms == ["android"]:
+            # An Android-only report is reproduced on the emulator instead of
+            # on desktop: the desktop passes would be testing the wrong
+            # platform.
+            try:
+                await run_android_repro(
+                    default_config,
+                    tracker,
+                    input_data,
+                    bugzilla_mcp_server,
+                    repro_results,
+                    screenshots_dir,
+                )
+            except android.AndroidError:
+                logger.exception("Android emulator setup failed")
+                result = repro_results.into_result()
+                result.summary = (
+                    "Issue was identified as Android only but the Android "
+                    "environment could not be prepared"
+                )
+                result.failure_reason = "unsupported_android"
+                return result
+
+            result = repro_results.into_result()
+            if repro_results.reproduced and repro_results.chrome_reproduced:
+                result.failure_reason = "not_firefox_specific"
             return result
 
         async def next_repro_task(
@@ -833,8 +1097,6 @@ async def run_autowebcompat_repro(
                     initial_repro.steps,
                 )
             repro_results.set_result(channel, extra, await task.run())
-
-        screenshots_dir = Path(tempfile.mkdtemp(prefix="autowebcompat-screenshots-"))
 
         # Always try in nightly first
         await next_repro_task(FirefoxChannel.nightly)
