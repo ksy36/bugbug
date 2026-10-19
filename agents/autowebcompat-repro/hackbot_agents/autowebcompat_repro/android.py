@@ -32,7 +32,9 @@ AVD_NAME = os.environ.get("ANDROID_AVD_NAME", "webcompat")
 # told which one when any ambiguity is possible.
 DEVICE_SERIAL = "emulator-5554"
 
-BOOT_TIMEOUT = 300
+# A cold first boot in CI (software GPU, fresh userdata) is much slower
+# than a warm local boot with hardware acceleration.
+BOOT_TIMEOUT = 900
 BOOT_POLL_INTERVAL = 5
 ADB_TIMEOUT = 120
 
@@ -180,12 +182,9 @@ class Emulator:
             "-no-snapshot",
             "-gpu",
             "swiftshader_indirect",
-            # The playstore system image is a locked production build, so adbd
-            # refuses the fchown geckodriver issues when pushing a Fenix
-            # profile ("adb error: fchown failed: Operation not permitted").
-            # Loosen it: a non-playstore image would avoid this but ships no
-            # Chrome, which the cross-check needs.
-            "-writable-system",
+            # selinux permissive only; -writable-system is deliberately not
+            # used: it roughly doubles boot time and does not help, since adbd
+            # refuses root on playstore images regardless.
             "-selinux",
             "permissive",
             "-camera-back",
@@ -207,6 +206,13 @@ class Emulator:
             if self.process is not None and self.process.poll() is not None:
                 raise AndroidError(
                     f"emulator exited with {self.process.returncode} before booting"
+                )
+            waited = int(time.monotonic() - (deadline - timeout))
+            if waited and waited % 60 < BOOT_POLL_INTERVAL:
+                logger.info(
+                    "waiting for boot (%ss): state=%r",
+                    waited,
+                    adb("get-state", check=False).strip(),
                 )
             if getprop("sys.boot_completed") == "1":
                 logger.info(

@@ -8,6 +8,7 @@ Run inside the agent image; see .github/workflows/android-emulator-smoke.yml.
 
 import asyncio
 import json
+import logging
 import sys
 
 from hackbot_agents.autowebcompat_repro import android
@@ -22,7 +23,12 @@ URL = "https://example.com/"
 
 async def mcp_call(proc, method, params, req_id, timeout=180):
     proc.stdin.write(
-        (json.dumps({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}) + "\n").encode()
+        (
+            json.dumps(
+                {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}
+            )
+            + "\n"
+        ).encode()
     )
     await proc.stdin.drain()
     while True:
@@ -50,23 +56,53 @@ def tool_text(resp):
 async def drive(label, config, expect_ua):
     """Run navigate/snapshot/userAgent against one MCP server."""
     proc = await asyncio.create_subprocess_exec(
-        config["command"], *config["args"],
-        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+        config["command"],
+        *config["args"],
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
         env={**__import__("os").environ, **config.get("env", {})},
     )
     try:
-        await mcp_call(proc, "initialize", {
-            "protocolVersion": "2024-11-05", "capabilities": {},
-            "clientInfo": {"name": "smoke", "version": "1"},
-        }, 1)
-        proc.stdin.write((json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}) + "\n").encode())
+        await mcp_call(
+            proc,
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "smoke", "version": "1"},
+            },
+            1,
+        )
+        proc.stdin.write(
+            (
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "notifications/initialized",
+                        "params": {},
+                    }
+                )
+                + "\n"
+            ).encode()
+        )
         await proc.stdin.drain()
 
-        nav = tool_text(await mcp_call(proc, "tools/call", {"name": "navigate_page", "arguments": {"url": URL}}, 2))
+        nav = tool_text(
+            await mcp_call(
+                proc,
+                "tools/call",
+                {"name": "navigate_page", "arguments": {"url": URL}},
+                2,
+            )
+        )
         print(f"[{label}] navigate: {nav.strip()[:120]}")
 
-        snap = tool_text(await mcp_call(proc, "tools/call", {"name": "take_snapshot", "arguments": {}}, 3))
+        snap = tool_text(
+            await mcp_call(
+                proc, "tools/call", {"name": "take_snapshot", "arguments": {}}, 3
+            )
+        )
         # Assert on structure, not page copy: example.com's text changes, and
         # the two MCPs format snapshots differently. A uid means the
         # accessibility tree came back and the agent has something to click.
@@ -74,9 +110,17 @@ async def drive(label, config, expect_ua):
             raise RuntimeError(f"snapshot has no uids: {snap[:300]}")
         print(f"[{label}] snapshot: {snap.count('uid=')} uids")
 
-        ua = tool_text(await mcp_call(proc, "tools/call", {
-            "name": "evaluate_script", "arguments": {"function": "() => navigator.userAgent"},
-        }, 4))
+        ua = tool_text(
+            await mcp_call(
+                proc,
+                "tools/call",
+                {
+                    "name": "evaluate_script",
+                    "arguments": {"function": "() => navigator.userAgent"},
+                },
+                4,
+            )
+        )
         if expect_ua not in ua:
             raise RuntimeError(f"UA missing {expect_ua!r}: {ua[:300]}")
         print(f"[{label}] userAgent contains {expect_ua!r}")
@@ -94,10 +138,14 @@ async def main():
         # files, so record both before driving anything.
         import os
 
-        print(f"[env] uid={os.getuid()} home={os.path.expanduser('~')} tmp={os.environ.get('TMPDIR', '/tmp')}")
+        print(
+            f"[env] uid={os.getuid()} home={os.path.expanduser('~')} tmp={os.environ.get('TMPDIR', '/tmp')}"
+        )
         print(f"[env] adb root: {android.adb('root', check=False).strip()!r}")
-        print(f"[env] debuggable: {android.getprop('ro.debuggable')!r} "
-              f"build type: {android.getprop('ro.build.type')!r}")
+        print(
+            f"[env] debuggable: {android.getprop('ro.debuggable')!r} "
+            f"build type: {android.getprop('ro.build.type')!r}"
+        )
 
         android.start_app(package)
         android.start_app(android.CHROME_PACKAGE)
@@ -113,6 +161,11 @@ async def main():
 
 
 if __name__ == "__main__":
+    # Without this the module's logger.info calls (emulator boot progress,
+    # installs) are swallowed, which makes a CI timeout undiagnosable.
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(message)s", stream=sys.stdout
+    )
     try:
         asyncio.run(main())
     except Exception as exc:
