@@ -41,10 +41,10 @@ ADB_TIMEOUT = 120
 # Chrome for Android publishes its DevTools endpoint on this abstract unix
 # socket; `adb forward` maps it to a host port the Chrome DevTools MCP attaches
 # to. See docs/debugging-android.md in chrome-devtools-mcp.
-CHROME_DEVTOOLS_SOCKET = "localabstract:chrome_devtools_remote"
 CHROME_DEVTOOLS_PORT = 9222
 # Chromium rather than Chrome: no sideloadable Chrome APK exists for Android.
 CHROME_PACKAGE = "org.chromium.chrome"
+
 CHROMIUM_APK = Path(os.environ.get("CHROMIUM_APK", "/opt/chromium/ChromePublic.apk"))
 
 
@@ -164,13 +164,41 @@ def install_chrome() -> None:
         )
     install_apk(CHROMIUM_APK)
 
+    # Chromium does not start its DevTools server by default; the flag goes in
+    # a file it reads at launch, which works because the emulator image is
+    # userdebug (ro.debuggable=1). Written after the install so it survives it.
+    adb(
+        "shell",
+        "echo 'chrome --remote-debugging-socket-name="
+        f"{CHROME_PACKAGE}_devtools_remote' > /data/local/tmp/chrome-command-line",
+    )
+
+
+def devtools_socket_name() -> str:
+    """Find Chromium's DevTools socket by asking the device.
+
+    The name depends on the build (Play Store Chrome uses a fixed
+    ``chrome_devtools_remote``; Chromium derives it from its package), so read
+    the open sockets rather than assume.
+    """
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        for line in adb("shell", "cat", "/proc/net/unix", check=False).splitlines():
+            if "devtools_remote" in line and "stetho" not in line:
+                return line.rsplit("@", 1)[-1].strip()
+        time.sleep(2)
+    raise AndroidError(
+        f"{CHROME_PACKAGE} opened no DevTools socket within 60s; is "
+        "/data/local/tmp/chrome-command-line being honoured?"
+    )
+
 
 def forward_chrome_devtools(port: int = CHROME_DEVTOOLS_PORT) -> str:
     """Expose Chrome's on-device DevTools socket on a host port."""
     # Clear stale forwards first so a retry doesn't stack duplicates
     # (as wpt's chrome_android.py does before setting up its own).
     adb("forward", "--remove-all", check=False)
-    adb("forward", f"tcp:{port}", CHROME_DEVTOOLS_SOCKET)
+    adb("forward", f"tcp:{port}", f"localabstract:{devtools_socket_name()}")
     endpoint = f"ws://127.0.0.1:{port}/devtools/browser"
     logger.info("forwarded Chrome DevTools to %s", endpoint)
     return endpoint
