@@ -56,6 +56,9 @@ RUN apt-get update \
         default-jre-headless \
         # Shared libraries the emulator binary dlopens even with -no-window.
         libpulse0 libxkbfile1 libglu1-mesa \
+        # e2tools reads Chrome's APKs out of the Play Store system image's ext4
+        # partition without mounting it, which a docker build cannot do.
+        e2tools fdisk \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the Android SDK and create the AVD at build time. Doing this at
@@ -92,10 +95,12 @@ RUN set -eux; \
     rm /tmp/cmdline-tools.zip; \
     export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"; \
     yes | sdkmanager --licenses > /dev/null; \
-    # google_apis_playstore ships Chrome preinstalled, which provides the
-    # cross-check browser: Google does not distribute Chrome APKs for
-    # sideloading.
-    image="system-images;android-${ANDROID_API};google_apis_playstore;${abi}"; \
+    # google_apis, not google_apis_playstore: playstore images are locked
+    # production builds where geckodriver cannot chown the Fenix profile it
+    # pushes ("fchown failed: Operation not permitted"). This matches what wpt
+    # uses to run Fenix on emulators (tools/wpt/android.py). Chrome is not
+    # preinstalled here, so the cross-check browser is sideloaded instead.
+    image="system-images;android-${ANDROID_API};google_apis;${abi}"; \
     sdkmanager --install "platform-tools" "emulator" \
         "platforms;android-${ANDROID_API}" "$image" > /dev/null; \
     # The data partition must be sized at creation: editing config.ini later
@@ -107,6 +112,40 @@ RUN set -eux; \
         --path "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"; \
     printf 'disk.dataPartition.size=12G\nhw.ramSize=4096\n' \
         >> "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd/config.ini"
+# Chrome is not in the google_apis image, and there is no sideloadable Chrome
+# or Chromium for Android x86_64 (Chrome for Testing is desktop-only; Chromium's
+# Android snapshots are arm-only). So keep the matching Play Store system image
+# in the layer: android.install_chrome() extracts Chrome's APKs from it at
+# runtime and installs them onto the running google_apis emulator.
+ENV CHROME_APK_DIR=/opt/chrome-apks
+
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) abi=x86_64 ;; \
+        arm64) abi=arm64-v8a ;; \
+    esac; \
+    export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"; \
+    store_image="system-images;android-${ANDROID_API};google_apis_playstore;${abi}"; \
+    sdkmanager --install "$store_image" > /dev/null; \
+    img="$ANDROID_SDK_ROOT/system-images/android-${ANDROID_API}/google_apis_playstore/${abi}/system.img"; \
+    mkdir -p "$CHROME_APK_DIR"; \
+    # system.img is a partitioned disk; find the ext4 partition's byte offset so
+    # e2cp can address it, then copy out every APK Chrome and Trichrome need.
+    offset="$(fdisk -lu --bytes "$img" 2>/dev/null | awk '/^[^ ]*img[0-9]/ {print $2 * 512; exit}')"; \
+    : "${offset:=0}"; \
+    for dir in product/app/Chrome product/priv-app/Chrome \
+               app/Chrome priv-app/Chrome \
+               product/app/TrichromeLibrary product/priv-app/TrichromeLibrary; do \
+        e2ls "${img}?offset=${offset}:/${dir}" 2>/dev/null | tr -s ' ' '\n' \
+            | grep -i '\.apk$' | while read -r apk; do \
+                e2cp "${img}?offset=${offset}:/${dir}/${apk}" "$CHROME_APK_DIR/$apk" \
+                    2>/dev/null && echo "extracted $dir/$apk"; \
+            done; \
+    done; \
+    ls -la "$CHROME_APK_DIR"; \
+    test -n "$(ls -A "$CHROME_APK_DIR")" || { echo "no Chrome APKs extracted" >&2; exit 1; }; \
+    sdkmanager --uninstall "$store_image" > /dev/null
+
 ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH"
 
 # Install the DevTools MCP servers and Puppeteer from the pinned

@@ -44,6 +44,8 @@ ADB_TIMEOUT = 120
 CHROME_DEVTOOLS_SOCKET = "localabstract:chrome_devtools_remote"
 CHROME_DEVTOOLS_PORT = 9222
 CHROME_PACKAGE = "com.android.chrome"
+# Populated by the Dockerfile from the Play Store system image.
+CHROME_APK_DIR = Path(os.environ.get("CHROME_APK_DIR", "/opt/chrome-apks"))
 
 
 class AndroidError(Exception):
@@ -148,6 +150,50 @@ def start_app(package: str, url: str | None = None) -> None:
     raise AndroidError(f"{package} did not start within 60s")
 
 
+def install_chrome() -> None:
+    """Install Chrome onto the emulator from the Play Store system image.
+
+    The google_apis image ships no browser, and there is no sideloadable Chrome
+    or Chromium for Android x86_64 (Chrome for Testing is desktop-only;
+    Chromium's Android snapshots are arm-only). So the matching Play Store
+    system image is kept in the image purely as a source of Chrome's APKs,
+    which are extracted from its system partition and installed here.
+
+    Chrome is split into a base APK plus configuration splits, so it must go on
+    with ``install-multiple``. Recent builds also factor their native code into
+    a shared TrichromeLibrary APK, which has to be installed first because
+    Chrome declares a static dependency on it.
+    """
+    apks = sorted(CHROME_APK_DIR.glob("*.apk")) if CHROME_APK_DIR.is_dir() else []
+    if not apks:
+        raise AndroidError(
+            f"No Chrome APKs in {CHROME_APK_DIR}; the image should extract them "
+            "from the Play Store system image (see the Dockerfile)."
+        )
+
+    # TrichromeLibrary is a separate package and a prerequisite, so it cannot be
+    # part of the install-multiple set for Chrome itself.
+    trichrome = [apk for apk in apks if "trichrome" in apk.name.lower()]
+    chrome_apks = [apk for apk in apks if apk not in trichrome]
+
+    for lib in trichrome:
+        logger.info("installing %s", lib.name)
+        output = adb("install", "-r", "-d", str(lib), timeout=600)
+        if "Success" not in output:
+            raise AndroidError(f"Installing {lib.name} failed: {output.strip()}")
+
+    logger.info("installing Chrome (%d apks)", len(chrome_apks))
+    output = adb(
+        "install-multiple",
+        "-r",
+        "-d",
+        *[str(apk) for apk in chrome_apks],
+        timeout=900,
+    )
+    if "Success" not in output:
+        raise AndroidError(f"Installing Chrome failed: {output.strip()}")
+
+
 def forward_chrome_devtools(port: int = CHROME_DEVTOOLS_PORT) -> str:
     """Expose Chrome's on-device DevTools socket on a host port."""
     # Clear stale forwards first so a retry doesn't stack duplicates
@@ -182,11 +228,15 @@ class Emulator:
             "-no-snapshot",
             "-gpu",
             "swiftshader_indirect",
-            # selinux permissive only; -writable-system is deliberately not
-            # used: it roughly doubles boot time and does not help, since adbd
-            # refuses root on playstore images regardless.
+            # These match what wpt uses to run Fenix on emulators
+            # (tools/wpt/android.py): a permissive selinux and test_harness
+            # let geckodriver chown the Fenix profile it pushes to the device.
             "-selinux",
             "permissive",
+            "-prop",
+            "ro.test_harness=true",
+            "-memory",
+            "4096",
             "-camera-back",
             "none",
             "-camera-front",
@@ -215,6 +265,10 @@ class Emulator:
                     adb("get-state", check=False).strip(),
                 )
             if getprop("sys.boot_completed") == "1":
+                # google_apis images are rootable; geckodriver needs this to
+                # chown the profile it pushes into the Fenix data dir.
+                adb("root", check=False, timeout=30)
+                adb("wait-for-device", check=False)
                 logger.info(
                     "emulator booted: Android %s, %s",
                     getprop("ro.build.version.release"),

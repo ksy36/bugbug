@@ -148,6 +148,7 @@ async def main():
         )
 
         android.start_app(package)
+        android.install_chrome()
         android.start_app(android.CHROME_PACKAGE)
         endpoint = android.forward_chrome_devtools()
 

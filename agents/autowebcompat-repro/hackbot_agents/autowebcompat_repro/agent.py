@@ -937,9 +937,11 @@ async def run_android_repro(
     browsers = AndroidBrowsers()
 
     with android.Emulator():
-        # Chrome ships with the Play Store system image. It cannot be launched
-        # by its MCP server, so start it and forward its DevTools socket
-        # before the agent runs.
+        # Chrome is not in the google_apis image, so install it from the
+        # APKs extracted at build time. It cannot be launched by its MCP
+        # server either, so start it and forward its DevTools socket before
+        # the agent runs.
+        android.install_chrome()
         android.start_app(android.CHROME_PACKAGE)
         chrome_ws_endpoint = android.forward_chrome_devtools()
 
