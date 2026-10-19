@@ -180,6 +180,14 @@ class Emulator:
             "-no-snapshot",
             "-gpu",
             "swiftshader_indirect",
+            # The playstore system image is a locked production build, so adbd
+            # refuses the fchown geckodriver issues when pushing a Fenix
+            # profile ("adb error: fchown failed: Operation not permitted").
+            # Loosen it: a non-playstore image would avoid this but ships no
+            # Chrome, which the cross-check needs.
+            "-writable-system",
+            "-selinux",
+            "permissive",
             "-camera-back",
             "none",
             "-camera-front",

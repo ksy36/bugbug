@@ -88,6 +88,17 @@ async def drive(label, config, expect_ua):
 async def main():
     with android.Emulator():
         package = install_fenix("nightly")
+
+        # Diagnostics: the fchown failure geckodriver reports when pushing a
+        # Fenix profile depends on who adbd thinks we are and where we stage
+        # files, so record both before driving anything.
+        import os
+
+        print(f"[env] uid={os.getuid()} home={os.path.expanduser('~')} tmp={os.environ.get('TMPDIR', '/tmp')}")
+        print(f"[env] adb root: {android.adb('root', check=False).strip()!r}")
+        print(f"[env] debuggable: {android.getprop('ro.debuggable')!r} "
+              f"build type: {android.getprop('ro.build.type')!r}")
+
         android.start_app(package)
         android.start_app(android.CHROME_PACKAGE)
         endpoint = android.forward_chrome_devtools()

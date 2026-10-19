@@ -6,6 +6,7 @@ the image with ``npm ci`` (see the Dockerfile).
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from claude_agent_sdk.types import McpStdioServerConfig
@@ -95,8 +96,13 @@ def build_android_firefox_devtools_server(
     if enable_script:
         args.append("--enable-script")
 
+    # HOME must be writable: geckodriver stages the Fenix profile in a temp
+    # dir before pushing it to the device, and the agent user cannot write
+    # under a root-owned home.
     return McpStdioServerConfig(
-        command=resolve_bin("firefox-devtools-mcp-moz"), args=args
+        command=resolve_bin("firefox-devtools-mcp-moz"),
+        args=args,
+        env={"HOME": str(Path.home()), "TMPDIR": tempfile.gettempdir()},
     )
 
 
