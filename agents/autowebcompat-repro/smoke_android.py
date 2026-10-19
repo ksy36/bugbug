@@ -9,7 +9,9 @@ Run inside the agent image; see .github/workflows/android-emulator-smoke.yml.
 import asyncio
 import json
 import logging
+import os
 import sys
+from pathlib import Path
 
 from hackbot_agents.autowebcompat_repro import android
 from hackbot_agents.autowebcompat_repro.android_browser import install_fenix
@@ -19,6 +21,7 @@ from hackbot_agents.autowebcompat_repro.mcp_servers import (
 )
 
 URL = "https://example.com/"
+ARTIFACTS = Path("/tmp/android-smoke-artifacts")
 
 
 async def mcp_call(proc, method, params, req_id, timeout=180):
@@ -31,16 +34,18 @@ async def mcp_call(proc, method, params, req_id, timeout=180):
         ).encode()
     )
     await proc.stdin.drain()
-    while True:
-        line = await asyncio.wait_for(proc.stdout.readline(), timeout)
-        if not line:
-            raise RuntimeError(f"{method}: server closed stdout")
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if msg.get("id") == req_id:
-            return msg
+    # Notifications must not keep resetting the timeout indefinitely.
+    async with asyncio.timeout(timeout):
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                raise RuntimeError(f"{method}: server closed stdout")
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if msg.get("id") == req_id:
+                return msg
 
 
 def tool_text(resp):
@@ -60,8 +65,9 @@ async def drive(label, config, expect_ua):
         *config["args"],
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-        env={**__import__("os").environ, **config.get("env", {})},
+        # MCP and geckodriver diagnostics belong in the Actions log.
+        stderr=None,
+        env={**os.environ, **config.get("env", {})},
     )
     try:
         await mcp_call(
@@ -123,21 +129,40 @@ async def drive(label, config, expect_ua):
         )
         if expect_ua not in ua:
             raise RuntimeError(f"UA missing {expect_ua!r}: {ua[:300]}")
+        if "Android" not in ua:
+            raise RuntimeError(f"UA is not Android: {ua[:300]}")
         print(f"[{label}] userAgent contains {expect_ua!r}")
     finally:
-        proc.terminate()
-        await proc.wait()
+        if proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), 10)
+            except TimeoutError:
+                proc.kill()
+                await proc.wait()
+
+
+def diagnostics(label):
+    """Save device evidence before the emulator is torn down."""
+    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    for name, args in {
+        "logcat": ("logcat", "-d", "-t", "2000"),
+        "activities": ("shell", "dumpsys", "activity", "activities"),
+        "sockets": ("shell", "cat", "/proc/net/unix"),
+        "flags": ("shell", "cat", "/data/local/tmp/chrome-command-line"),
+    }.items():
+        try:
+            output = android.adb(*args, check=False, timeout=30)
+            (ARTIFACTS / f"{label}-{name}.txt").write_text(output)
+        except Exception as exc:
+            print(f"[{label}] collecting {name} failed: {exc}", file=sys.stderr)
 
 
 async def main():
     with android.Emulator():
-        package = install_fenix("nightly")
-
         # Diagnostics: the fchown failure geckodriver reports when pushing a
         # Fenix profile depends on who adbd thinks we are and where we stage
         # files, so record both before driving anything.
-        import os
-
         print(
             f"[env] uid={os.getuid()} home={os.path.expanduser('~')} tmp={os.environ.get('TMPDIR', '/tmp')}"
         )
@@ -147,16 +172,33 @@ async def main():
             f"build type: {android.getprop('ro.build.type')!r}"
         )
 
-        android.start_app(package)
-        android.install_chrome()
-        android.start_app(android.CHROME_PACKAGE)
-        endpoint = android.forward_chrome_devtools()
-
-        ff = build_android_firefox_devtools_server(package, android.DEVICE_SERIAL)
-        await drive("fenix", ff, "Firefox")
-
-        chrome = build_android_chrome_devtools_server(endpoint)
-        await drive("chrome", chrome, "Chrome")
+        failures = []
+        # Exercise each browser even if the other fails during setup or MCP
+        # control. Otherwise a missing Chrome socket hides all Firefox results.
+        for label in ("fenix", "chrome"):
+            try:
+                print(f"[{label}] starting smoke test")
+                if label == "fenix":
+                    package = install_fenix("nightly")
+                    android.start_app(package)
+                    config = build_android_firefox_devtools_server(
+                        package, android.DEVICE_SERIAL
+                    )
+                    await drive(label, config, "Firefox")
+                else:
+                    android.install_chrome()
+                    android.start_app(android.CHROME_PACKAGE, "about:blank")
+                    endpoint = android.forward_chrome_devtools()
+                    config = build_android_chrome_devtools_server(endpoint)
+                    await drive(label, config, "Chrome")
+                print(f"[{label}] PASS")
+            except Exception as exc:
+                failures.append(label)
+                print(f"[{label}] FAIL: {type(exc).__name__}: {exc}", file=sys.stderr)
+            finally:
+                diagnostics(label)
+        if failures:
+            raise RuntimeError(f"Browser smoke tests failed: {', '.join(failures)}")
 
     print("SMOKE OK: both MCPs drove their browser on the emulator")
 

@@ -15,6 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check Android connection helpers
+        env:
+          PYTHONPATH: agents/autowebcompat-repro
+        run: python3 -m unittest discover -s agents/autowebcompat-repro/tests
+
       - name: Check KVM
         run: ls -l /dev/kvm
 
@@ -25,7 +30,21 @@ jobs:
 
       - name: Drive both browsers via their MCP servers
         run: |
-          docker run --rm --device /dev/kvm \
+          docker run --name android-smoke --device /dev/kvm \
             --group-add "$(getent group kvm | cut -d: -f3)" \
             -v "$PWD/agents/autowebcompat-repro/smoke_android.py:/app/smoke_android.py:ro" \
             -w /app awc-agent python smoke_android.py
+
+      - name: Collect Android diagnostics
+        if: always()
+        run: |
+          mkdir -p android-smoke-artifacts
+          docker cp android-smoke:/tmp/android-smoke-artifacts/. android-smoke-artifacts/ || true
+
+      - name: Upload Android diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-smoke-diagnostics
+          path: android-smoke-artifacts/
+          if-no-files-found: ignore

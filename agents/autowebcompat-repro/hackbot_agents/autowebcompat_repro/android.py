@@ -13,6 +13,7 @@ container.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import platform
@@ -20,6 +21,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Self
+from urllib.request import urlopen
 
 logger = logging.getLogger("autowebcompat-repro")
 
@@ -164,14 +166,19 @@ def install_chrome() -> None:
         )
     install_apk(CHROMIUM_APK)
 
-    # Chromium does not start its DevTools server by default; the flag goes in
-    # a file it reads at launch, which works because the emulator image is
-    # userdebug (ro.debuggable=1). Written after the install so it survives it.
+    # The socket-name flag only names the server; it does not start it.
+    # DevTools starts after native browser initialization, so skip onboarding
+    # and open a tab rather than leaving the process on a first-run screen.
+    # The userdebug image allows reading flags from /data/local/tmp.
     adb(
         "shell",
-        "echo 'chrome --remote-debugging-socket-name="
+        "echo 'chrome --disable-fre --no-first-run --no-default-browser-check "
+        "--remote-debugging-socket-name="
         f"{CHROME_PACKAGE}_devtools_remote' > /data/local/tmp/chrome-command-line",
     )
+    adb("shell", "chmod", "644", "/data/local/tmp/chrome-command-line")
+    # Installation may have started the app before the flags existed.
+    adb("shell", "am", "force-stop", CHROME_PACKAGE)
 
 
 def devtools_socket_name() -> str:
@@ -203,13 +210,29 @@ def devtools_socket_name() -> str:
 
 def forward_chrome_devtools(port: int = CHROME_DEVTOOLS_PORT) -> str:
     """Expose Chrome's on-device DevTools socket on a host port."""
-    # Clear stale forwards first so a retry doesn't stack duplicates
-    # (as wpt's chrome_android.py does before setting up its own).
-    adb("forward", "--remove-all", check=False)
+    # Preserve geckodriver's forwards when both browsers share the device.
+    adb("forward", "--remove", f"tcp:{port}", check=False)
     adb("forward", f"tcp:{port}", f"localabstract:{devtools_socket_name()}")
-    endpoint = f"ws://127.0.0.1:{port}/devtools/browser"
-    logger.info("forwarded Chrome DevTools to %s", endpoint)
-    return endpoint
+    # A forward can succeed before the HTTP server is ready. Discover the
+    # browser websocket from CDP rather than guessing its path.
+    deadline = time.monotonic() + 60
+    error = "missing webSocketDebuggerUrl"
+    while time.monotonic() < deadline:
+        try:
+            with urlopen(
+                f"http://127.0.0.1:{port}/json/version", timeout=5
+            ) as response:
+                version = json.load(response)
+            endpoint = version.get("webSocketDebuggerUrl")
+            if endpoint:
+                logger.info(
+                    "forwarded %s DevTools to %s", version.get("Browser"), endpoint
+                )
+                return endpoint
+        except (OSError, ValueError) as exc:
+            error = str(exc)
+        time.sleep(1)
+    raise AndroidError(f"Chrome DevTools on port {port} did not become ready: {error}")
 
 
 class Emulator:
