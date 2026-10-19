@@ -56,9 +56,6 @@ RUN apt-get update \
         default-jre-headless \
         # Shared libraries the emulator binary dlopens even with -no-window.
         libpulse0 libxkbfile1 libglu1-mesa \
-        # e2tools reads Chrome's APKs out of the Play Store system image's ext4
-        # partition without mounting it, which a docker build cannot do.
-        e2tools fdisk \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the Android SDK and create the AVD at build time. Doing this at
@@ -112,39 +109,37 @@ RUN set -eux; \
         --path "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"; \
     printf 'disk.dataPartition.size=12G\nhw.ramSize=4096\n' \
         >> "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd/config.ini"
-# Chrome is not in the google_apis image, and there is no sideloadable Chrome
-# or Chromium for Android x86_64 (Chrome for Testing is desktop-only; Chromium's
-# Android snapshots are arm-only). So keep the matching Play Store system image
-# in the layer: android.install_chrome() extracts Chrome's APKs from it at
-# runtime and installs them onto the running google_apis emulator.
-ENV CHROME_APK_DIR=/opt/chrome-apks
+# The google_apis image ships no browser, so download Chromium for Android as
+# the cross-check browser. Chromium (not Chrome) because Google publishes no
+# sideloadable Chrome APK and Chrome for Testing has no Android build; pulling
+# Chrome out of a Play Store system image means unpacking a dynamic-partition
+# `super` image, which a docker build cannot do. Note the tradeoff: Chromium
+# lacks proprietary codecs (H.264/AAC) and Google API keys.
+#
+# AndroidDesktop_x64 is the x86_64 build (the plain `Android` and
+# `Android_Arm64` snapshots carry arm libs only). It is a single APK with no
+# splits and no TrichromeLibrary, so a plain `adb install` suffices.
+ENV CHROMIUM_APK=/opt/chromium/ChromePublic.apk
 
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
-        amd64) abi=x86_64 ;; \
-        arm64) abi=arm64-v8a ;; \
+        amd64) platform=AndroidDesktop_x64 ;; \
+        arm64) platform=Android_Arm64 ;; \
     esac; \
-    export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"; \
-    store_image="system-images;android-${ANDROID_API};google_apis_playstore;${abi}"; \
-    sdkmanager --install "$store_image" > /dev/null; \
-    img="$ANDROID_SDK_ROOT/system-images/android-${ANDROID_API}/google_apis_playstore/${abi}/system.img"; \
-    mkdir -p "$CHROME_APK_DIR"; \
-    # system.img is a partitioned disk; find the ext4 partition's byte offset so
-    # e2cp can address it, then copy out every APK Chrome and Trichrome need.
-    offset="$(fdisk -lu --bytes "$img" 2>/dev/null | awk '/^[^ ]*img[0-9]/ {print $2 * 512; exit}')"; \
-    : "${offset:=0}"; \
-    for dir in product/app/Chrome product/priv-app/Chrome \
-               app/Chrome priv-app/Chrome \
-               product/app/TrichromeLibrary product/priv-app/TrichromeLibrary; do \
-        e2ls "${img}?offset=${offset}:/${dir}" 2>/dev/null | tr -s ' ' '\n' \
-            | grep -i '\.apk$' | while read -r apk; do \
-                e2cp "${img}?offset=${offset}:/${dir}/${apk}" "$CHROME_APK_DIR/$apk" \
-                    2>/dev/null && echo "extracted $dir/$apk"; \
-            done; \
-    done; \
-    ls -la "$CHROME_APK_DIR"; \
-    test -n "$(ls -A "$CHROME_APK_DIR")" || { echo "no Chrome APKs extracted" >&2; exit 1; }; \
-    sdkmanager --uninstall "$store_image" > /dev/null
+    base="https://storage.googleapis.com/chromium-browser-snapshots"; \
+    rev="$(curl -fsSL "$base/$platform/LAST_CHANGE")"; \
+    echo "Chromium snapshot $platform r$rev"; \
+    case "$platform" in \
+        AndroidDesktop_x64) zip=chrome-android-desktop ;; \
+        *) zip=chrome-android ;; \
+    esac; \
+    curl -fsSL -o /tmp/chromium.zip "$base/$platform/$rev/${zip}.zip"; \
+    mkdir -p /opt/chromium; \
+    unzip -p /tmp/chromium.zip "${zip}/apks/ChromePublic.apk" \
+        > /opt/chromium/ChromePublic.apk; \
+    rm /tmp/chromium.zip; \
+    test -s /opt/chromium/ChromePublic.apk; \
+    ls -la /opt/chromium
 
 ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH"
 

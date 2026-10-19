@@ -43,9 +43,9 @@ ADB_TIMEOUT = 120
 # to. See docs/debugging-android.md in chrome-devtools-mcp.
 CHROME_DEVTOOLS_SOCKET = "localabstract:chrome_devtools_remote"
 CHROME_DEVTOOLS_PORT = 9222
-CHROME_PACKAGE = "com.android.chrome"
-# Populated by the Dockerfile from the Play Store system image.
-CHROME_APK_DIR = Path(os.environ.get("CHROME_APK_DIR", "/opt/chrome-apks"))
+# Chromium rather than Chrome: no sideloadable Chrome APK exists for Android.
+CHROME_PACKAGE = "org.chromium.chrome"
+CHROMIUM_APK = Path(os.environ.get("CHROMIUM_APK", "/opt/chromium/ChromePublic.apk"))
 
 
 class AndroidError(Exception):
@@ -151,47 +151,18 @@ def start_app(package: str, url: str | None = None) -> None:
 
 
 def install_chrome() -> None:
-    """Install Chrome onto the emulator from the Play Store system image.
+    """Install the cross-check browser onto the emulator.
 
-    The google_apis image ships no browser, and there is no sideloadable Chrome
-    or Chromium for Android x86_64 (Chrome for Testing is desktop-only;
-    Chromium's Android snapshots are arm-only). So the matching Play Store
-    system image is kept in the image purely as a source of Chrome's APKs,
-    which are extracted from its system partition and installed here.
-
-    Chrome is split into a base APK plus configuration splits, so it must go on
-    with ``install-multiple``. Recent builds also factor their native code into
-    a shared TrichromeLibrary APK, which has to be installed first because
-    Chrome declares a static dependency on it.
+    The google_apis image ships no browser, so this installs the Chromium APK
+    baked into the image (see the Dockerfile for why Chromium rather than
+    Chrome). It is a single APK: no splits, no TrichromeLibrary.
     """
-    apks = sorted(CHROME_APK_DIR.glob("*.apk")) if CHROME_APK_DIR.is_dir() else []
-    if not apks:
+    if not CHROMIUM_APK.exists():
         raise AndroidError(
-            f"No Chrome APKs in {CHROME_APK_DIR}; the image should extract them "
-            "from the Play Store system image (see the Dockerfile)."
+            f"No Chromium APK at {CHROMIUM_APK}; the image should download it "
+            "(see the Dockerfile)."
         )
-
-    # TrichromeLibrary is a separate package and a prerequisite, so it cannot be
-    # part of the install-multiple set for Chrome itself.
-    trichrome = [apk for apk in apks if "trichrome" in apk.name.lower()]
-    chrome_apks = [apk for apk in apks if apk not in trichrome]
-
-    for lib in trichrome:
-        logger.info("installing %s", lib.name)
-        output = adb("install", "-r", "-d", str(lib), timeout=600)
-        if "Success" not in output:
-            raise AndroidError(f"Installing {lib.name} failed: {output.strip()}")
-
-    logger.info("installing Chrome (%d apks)", len(chrome_apks))
-    output = adb(
-        "install-multiple",
-        "-r",
-        "-d",
-        *[str(apk) for apk in chrome_apks],
-        timeout=900,
-    )
-    if "Success" not in output:
-        raise AndroidError(f"Installing Chrome failed: {output.strip()}")
+    install_apk(CHROMIUM_APK)
 
 
 def forward_chrome_devtools(port: int = CHROME_DEVTOOLS_PORT) -> str:
