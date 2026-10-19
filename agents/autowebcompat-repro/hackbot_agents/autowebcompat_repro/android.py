@@ -188,8 +188,16 @@ def devtools_socket_name() -> str:
                 return line.rsplit("@", 1)[-1].strip()
         time.sleep(2)
     raise AndroidError(
-        f"{CHROME_PACKAGE} opened no DevTools socket within 60s; is "
-        "/data/local/tmp/chrome-command-line being honoured?"
+        f"{CHROME_PACKAGE} opened no DevTools socket within 60s. Sockets seen: "
+        + repr(
+            [
+                line.rsplit("@", 1)[-1].strip()
+                for line in adb(
+                    "shell", "cat", "/proc/net/unix", check=False
+                ).splitlines()
+                if "@" in line
+            ][:20]
+        )
     )
 
 
