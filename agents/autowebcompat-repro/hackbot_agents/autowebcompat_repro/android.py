@@ -215,6 +215,10 @@ def install_mobile_chrome(directory: Path) -> None:
             raise AndroidError(f"No APKs for {package['package']}")
         for entry in package["apks"]:
             apk = directory / entry["file"]
+            if apk.name.lower().endswith("-stub.apk"):
+                raise AndroidError(
+                    f"Mobile Chrome bundle contains a placeholder APK: {apk}"
+                )
             if hashlib.sha256(apk.read_bytes()).hexdigest() != entry["sha256"]:
                 raise AndroidError(f"Mobile Chrome APK checksum mismatch: {apk}")
     logger.info("installing mobile Chrome from %s", manifest["fingerprint"])

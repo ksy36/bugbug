@@ -145,19 +145,38 @@ class MobileChromeTests(unittest.TestCase):
                 adb.assert_not_called()
 
     def test_exports_hidden_library_and_chrome_splits(self):
-        chrome = ["/product/app/Chrome/base.apk", "/product/app/Chrome/split.apk"]
-        library = "/product/app/TrichromeLibrary/base.apk"
+        chrome = [
+            "/data/app/com.android.chrome/Chrome.apk",
+            "/data/app/com.android.chrome/split.apk",
+        ]
+        library = "/data/app/com.google.android.trichromelibrary_567263637/TrichromeLibrary.apk"
+        details = (
+            "Packages:\n"
+            "  Package [com.android.chrome]:\n"
+            "    versionName=113.0.5672.136\n"
+            "    usesStaticLibraries:\n"
+            "      com.google.android.trichromelibrary version:567263637\n"
+            "    usesLibraryFiles:\n"
+            f"      {library}\n"
+            "    timeStamp=2026-10-20\n"
+            "Hidden system packages:\n"
+            "  Package [com.android.chrome]:\n"
+            "    codePath=/product/app/Chrome-Stub\n"
+        )
+        pulled = []
 
         def adb(*args, **kwargs):
             if args[:3] == ("shell", "pm", "path"):
                 return "\n".join(f"package:{path}" for path in chrome)
-            if args[:2] == ("shell", "find"):
-                return library + "\n/system/product/app/TrichromeLibrary/base.apk\n"
+            if args[:3] == ("shell", "dumpsys", "package"):
+                return details
             if args[0] == "pull":
+                pulled.append(args[1])
                 Path(args[2]).write_bytes(
                     b"library" if "TrichromeLibrary" in args[1] else args[1].encode()
                 )
-            return "versionName=123.0"
+                return ""
+            raise AssertionError(f"Unexpected ADB command: {args}")
 
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
@@ -171,3 +190,36 @@ class MobileChromeTests(unittest.TestCase):
             self.assertEqual(len(manifest["packages"]), 2)
             self.assertEqual(manifest["packages"][-1]["package"], "com.android.chrome")
             self.assertEqual(len(manifest["packages"][-1]["apks"]), 2)
+            self.assertEqual(pulled, [library, *chrome])
+
+    def test_rejects_unresolved_trichrome_before_pulling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(
+                android,
+                "adb",
+                side_effect=[
+                    "package:/data/app/Chrome.apk\n",
+                    "Packages:\n    usesStaticLibraries:\n      com.google.android.trichromelibrary version:123\n",
+                ],
+            ) as adb:
+                with self.assertRaisesRegex(
+                    android.AndroidError, "no resolved library"
+                ):
+                    export_chrome(Path(tmp))
+                self.assertEqual(adb.call_count, 2)
+
+    def test_rejects_old_stub_bundle_before_installing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            self.bundle(directory)
+            manifest_path = directory / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["packages"][0]["apks"][0]["file"] = "TrichromeLibrary-Stub.apk"
+            manifest_path.write_text(json.dumps(manifest))
+            with (
+                patch.object(android, "getprop", side_effect=["x86_64", "34"]),
+                patch.object(android, "adb") as adb,
+            ):
+                with self.assertRaisesRegex(android.AndroidError, "placeholder"):
+                    android.install_mobile_chrome(directory)
+                adb.assert_not_called()

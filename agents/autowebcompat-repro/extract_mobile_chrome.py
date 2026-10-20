@@ -30,30 +30,38 @@ def export_chrome(destination: Path) -> None:
     if not chrome_paths:
         raise android.AndroidError("The donor image has no com.android.chrome APKs")
 
-    # Static shared libraries are not ordinary launchable packages and may
-    # be hidden by pm list packages. Read their system APK paths directly.
-    # Match the directory too: some images name the actual APK base.apk.
-    listing = android.adb(
-        "shell",
-        "find",
-        "-L",
-        "/product",
-        "/system",
-        "/system_ext",
-        "-type",
-        "f",
-        "-name",
-        "*.apk",
-        check=False,
-    )
+    # The system partition may contain only a compressed-app placeholder
+    # named TrichromeLibrary-Stub.apk. Android expands the real library under
+    # /data/app during boot. Chrome's usesLibraryFiles reports its resolved
+    # dependency paths, including the exact Trichrome version it needs.
+    details = android.adb("shell", "dumpsys", "package", "com.android.chrome")
+    active_details = details.split("\nHidden system packages:", 1)[0]
+    library_paths = set()
+    in_library_files = False
+    for line in active_details.splitlines():
+        stripped = line.strip()
+        if stripped == "usesLibraryFiles:":
+            in_library_files = True
+        elif in_library_files:
+            if not stripped.startswith("/"):
+                in_library_files = False
+            elif "trichromelibrary" in stripped.lower() and stripped.endswith(".apk"):
+                library_paths.add(stripped)
+    if "com.google.android.trichromelibrary" in active_details and not library_paths:
+        raise android.AndroidError(
+            "Chrome declares Trichrome but has no resolved library APK"
+        )
     libraries = defaultdict(list)
-    for remote in sorted(set(listing.splitlines())):
-        if "trichromelibrary" in remote.lower() and remote.endswith(".apk"):
-            libraries[str(PurePosixPath(remote).parent)].append(remote)
+    for remote in sorted(library_paths):
+        libraries[str(PurePosixPath(remote).parent)].append(remote)
+
+    for remote in [*chrome_paths, *library_paths]:
+        if remote.lower().endswith("-stub.apk"):
+            raise android.AndroidError(f"Donor resolved a placeholder APK: {remote}")
 
     destination.mkdir(parents=True, exist_ok=True)
     packages = []
-    # Aliases such as /system/product and /product can expose the same APK.
+    # Multiple library entries can resolve to identical APKs.
     seen_library_hashes = set()
     for index, (label, paths) in enumerate(
         [*libraries.items(), ("com.android.chrome", chrome_paths)]
@@ -79,7 +87,6 @@ def export_chrome(destination: Path) -> None:
         "fingerprint": android.getprop("ro.build.fingerprint"),
         "packages": packages,
     }
-    details = android.adb("shell", "dumpsys", "package", "com.android.chrome")
     (destination / "chrome-package.txt").write_text(details)
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps(manifest, indent=2), flush=True)
