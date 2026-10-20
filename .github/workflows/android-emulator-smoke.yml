@@ -23,6 +23,17 @@ jobs:
       - name: Check KVM
         run: ls -l /dev/kvm
 
+      - name: Build mobile Chrome donor
+        run: |
+          docker build -f agents/autowebcompat-repro/Dockerfile \
+            --target chrome-donor -t awc-chrome-donor .
+
+      - name: Export mobile Chrome APKs
+        timeout-minutes: 20
+        run: |
+          docker run --name chrome-donor --device /dev/kvm awc-chrome-donor
+          docker cp chrome-donor:/tmp/mobile-chrome "$RUNNER_TEMP/mobile-chrome"
+
       - name: Build agent image
         run: |
           docker build -f agents/autowebcompat-repro/Dockerfile \
@@ -32,14 +43,21 @@ jobs:
         run: |
           docker run --name android-smoke --device /dev/kvm \
             --group-add "$(getent group kvm | cut -d: -f3)" \
+            -e ANDROID_CHROME=mobile \
+            -v "$RUNNER_TEMP/mobile-chrome:/opt/mobile-chrome:ro" \
             -v "$PWD/agents/autowebcompat-repro/smoke_android.py:/app/smoke_android.py:ro" \
             -w /app awc-agent python smoke_android.py
 
       - name: Collect Android diagnostics
         if: always()
         run: |
-          mkdir -p android-smoke-artifacts
+          mkdir -p android-smoke-artifacts/donor
           docker cp android-smoke:/tmp/android-smoke-artifacts/. android-smoke-artifacts/ || true
+          docker cp chrome-donor:/tmp/chrome-donor-artifacts/. android-smoke-artifacts/donor/ || true
+          if [ -f "$RUNNER_TEMP/mobile-chrome/manifest.json" ]; then
+            cp "$RUNNER_TEMP/mobile-chrome/manifest.json" android-smoke-artifacts/mobile-chrome-manifest.json
+            cp "$RUNNER_TEMP/mobile-chrome/chrome-package.txt" android-smoke-artifacts/
+          fi
 
       - name: Upload Android diagnostics
         if: always()

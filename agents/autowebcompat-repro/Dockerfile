@@ -25,7 +25,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/opt/venv/bin:$PATH"
 
-FROM base AS agent
+FROM base AS android-sdk
 
 # The agent needs Node.js + npm to run the DevTools MCP servers (npm packages;
 # the python base ships neither) and the shared libraries the browsers require
@@ -109,12 +109,35 @@ RUN set -eux; \
         --path "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"; \
     printf 'disk.dataPartition.size=12G\nhw.ramSize=4096\n' \
         >> "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd/config.ini"
-# The google_apis image ships no browser, so download Chromium for Android as
-# the cross-check browser. Chromium (not Chrome) because Google publishes no
-# sideloadable Chrome APK and Chrome for Testing has no Android build; pulling
-# Chrome out of a Play Store system image means unpacking a dynamic-partition
-# `super` image, which a docker build cannot do. Note the tradeoff: Chromium
-# lacks proprietary codecs (H.264/AAC) and Google API keys.
+ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH"
+
+# Run this target with KVM to export mobile Chrome from a booted Play Store
+# image. The rootable google_apis AVD remains the browser test environment.
+FROM android-sdk AS chrome-donor
+
+ENV ANDROID_AVD_NAME=chrome-donor
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) abi=x86_64 ;; \
+        arm64) abi=arm64-v8a ;; \
+    esac; \
+    image="system-images;android-${ANDROID_API};google_apis_playstore;${abi}"; \
+    "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "$image"; \
+    echo no | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager" create avd \
+        --force --name "$ANDROID_AVD_NAME" --package "$image" \
+        --path "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"
+
+COPY agents/autowebcompat-repro/hackbot_agents/autowebcompat_repro/android.py \
+    /app/donor/hackbot_agents/autowebcompat_repro/android.py
+COPY agents/autowebcompat-repro/extract_mobile_chrome.py /app/donor/
+WORKDIR /app/donor
+CMD ["python", "extract_mobile_chrome.py", "/tmp/mobile-chrome"]
+
+FROM android-sdk AS agent
+
+# Optional Chromium fallback. CI tests branded mobile Chrome using APKs
+# exported by chrome-donor and mounted at /opt/mobile-chrome instead.
+# Chromium lacks proprietary codecs (H.264/AAC) and Google API keys.
 #
 # AndroidDesktop_x64 is the x86_64 build (the plain `Android` and
 # `Android_Arm64` snapshots carry arm libs only). It is a single APK with no
@@ -140,8 +163,6 @@ RUN set -eux; \
     rm /tmp/chromium.zip; \
     test -s /opt/chromium/ChromePublic.apk; \
     ls -la /opt/chromium
-
-ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH"
 
 # Install the DevTools MCP servers and Puppeteer from the pinned
 # package.json/lockfile.

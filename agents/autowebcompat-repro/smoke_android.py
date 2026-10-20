@@ -131,6 +131,12 @@ async def drive(label, config, expect_ua):
             raise RuntimeError(f"UA missing {expect_ua!r}: {ua[:300]}")
         if "Android" not in ua:
             raise RuntimeError(f"UA is not Android: {ua[:300]}")
+        if (
+            label == "chrome"
+            and android.CHROME_BROWSER == "mobile"
+            and "Mobile" not in ua
+        ):
+            raise RuntimeError(f"Chrome UA is not mobile: {ua[:300]}")
         print(f"[{label}] userAgent contains {expect_ua!r}")
     finally:
         if proc.returncode is None:
@@ -150,6 +156,7 @@ def diagnostics(label):
         "activities": ("shell", "dumpsys", "activity", "activities"),
         "sockets": ("shell", "cat", "/proc/net/unix"),
         "flags": ("shell", "cat", "/data/local/tmp/chrome-command-line"),
+        "chrome-package": ("shell", "dumpsys", "package", android.CHROME_PACKAGE),
     }.items():
         try:
             output = android.adb(*args, check=False, timeout=30)
@@ -187,6 +194,9 @@ async def main():
                     await drive(label, config, "Firefox")
                 else:
                     android.install_chrome()
+                    print(
+                        f"[chrome] controlling Android package {android.CHROME_PACKAGE}"
+                    )
                     android.start_app(android.CHROME_PACKAGE, "about:blank")
                     endpoint = android.forward_chrome_devtools()
                     config = build_android_chrome_devtools_server(endpoint)

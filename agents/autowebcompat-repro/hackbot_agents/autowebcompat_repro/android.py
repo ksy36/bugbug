@@ -13,6 +13,7 @@ container.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -44,8 +45,15 @@ ADB_TIMEOUT = 120
 # socket; `adb forward` maps it to a host port the Chrome DevTools MCP attaches
 # to. See docs/debugging-android.md in chrome-devtools-mcp.
 CHROME_DEVTOOLS_PORT = 9222
-# Chromium rather than Chrome: no sideloadable Chrome APK exists for Android.
-CHROME_PACKAGE = "org.chromium.chrome"
+# Mobile Chrome's APK bundle is exported from a Play Store donor emulator.
+# Keep Chromium available for environments without a prepared bundle.
+CHROME_BROWSER = os.environ.get("ANDROID_CHROME", "chromium")
+CHROME_PACKAGE = (
+    "com.android.chrome" if CHROME_BROWSER == "mobile" else "org.chromium.chrome"
+)
+MOBILE_CHROME_APK_DIR = Path(
+    os.environ.get("MOBILE_CHROME_APK_DIR", "/opt/mobile-chrome")
+)
 
 CHROMIUM_APK = Path(os.environ.get("CHROMIUM_APK", "/opt/chromium/ChromePublic.apk"))
 
@@ -155,16 +163,20 @@ def start_app(package: str, url: str | None = None) -> None:
 def install_chrome() -> None:
     """Install the cross-check browser onto the emulator.
 
-    The google_apis image ships no browser, so this installs the Chromium APK
-    baked into the image (see the Dockerfile for why Chromium rather than
-    Chrome). It is a single APK: no splits, no TrichromeLibrary.
+    Select branded mobile Chrome with ANDROID_CHROME=mobile and supply the
+    donor's APK directory with MOBILE_CHROME_APK_DIR. Otherwise use Chromium.
     """
-    if not CHROMIUM_APK.exists():
-        raise AndroidError(
-            f"No Chromium APK at {CHROMIUM_APK}; the image should download it "
-            "(see the Dockerfile)."
-        )
-    install_apk(CHROMIUM_APK)
+    if CHROME_BROWSER == "mobile":
+        install_mobile_chrome(MOBILE_CHROME_APK_DIR)
+    elif CHROME_BROWSER == "chromium":
+        if not CHROMIUM_APK.exists():
+            raise AndroidError(
+                f"No Chromium APK at {CHROMIUM_APK}; the image should download it "
+                "(see the Dockerfile)."
+            )
+        install_apk(CHROMIUM_APK)
+    else:
+        raise AndroidError(f"Unsupported ANDROID_CHROME: {CHROME_BROWSER!r}")
 
     # The socket-name flag only names the server; it does not start it.
     # DevTools starts after native browser initialization, so skip onboarding
@@ -179,6 +191,48 @@ def install_chrome() -> None:
     adb("shell", "chmod", "644", "/data/local/tmp/chrome-command-line")
     # Installation may have started the app before the flags existed.
     adb("shell", "am", "force-stop", CHROME_PACKAGE)
+
+
+def install_mobile_chrome(directory: Path) -> None:
+    """Install a donor bundle, with static libraries before Chrome's splits."""
+    manifest_path = directory / "manifest.json"
+    if not manifest_path.is_file():
+        raise AndroidError(
+            f"No mobile Chrome manifest at {manifest_path}; run the chrome-donor "
+            "image and mount its exported APK directory here."
+        )
+    manifest = json.loads(manifest_path.read_text())
+    if manifest["abi"] != getprop("ro.product.cpu.abi"):
+        raise AndroidError("Mobile Chrome APKs do not match the emulator ABI")
+    if manifest["api"] != getprop("ro.build.version.sdk"):
+        raise AndroidError("Mobile Chrome donor and test Android API levels differ")
+    packages = manifest["packages"]
+    if not packages or packages[-1]["package"] != "com.android.chrome":
+        raise AndroidError("Mobile Chrome bundle must install com.android.chrome last")
+    # Validate the entire bundle before changing anything on the device.
+    for package in packages:
+        if not package["apks"]:
+            raise AndroidError(f"No APKs for {package['package']}")
+        for entry in package["apks"]:
+            apk = directory / entry["file"]
+            if hashlib.sha256(apk.read_bytes()).hexdigest() != entry["sha256"]:
+                raise AndroidError(f"Mobile Chrome APK checksum mismatch: {apk}")
+    logger.info("installing mobile Chrome from %s", manifest["fingerprint"])
+    for package in packages:
+        apks = [str(directory / entry["file"]) for entry in package["apks"]]
+        command = "install-multiple" if len(apks) > 1 else "install"
+        output = adb(command, "-r", *apks, timeout=600)
+        if "Success" not in output:
+            raise AndroidError(
+                f"Installing {package['package']} failed: {output.strip()}"
+            )
+    details = adb("shell", "dumpsys", "package", "com.android.chrome")
+    logger.info(
+        "installed mobile Chrome: %s",
+        "; ".join(
+            line.strip() for line in details.splitlines() if "versionName=" in line
+        ),
+    )
 
 
 def devtools_socket_name() -> str:
@@ -238,8 +292,16 @@ def forward_chrome_devtools(port: int = CHROME_DEVTOOLS_PORT) -> str:
 class Emulator:
     """A running Android emulator, usable as a context manager."""
 
-    def __init__(self, avd_name: str = AVD_NAME) -> None:
+    def __init__(
+        self,
+        avd_name: str = AVD_NAME,
+        *,
+        root: bool = True,
+        log_path: Path | None = None,
+    ) -> None:
         self.avd_name = avd_name
+        self.root = root
+        self.log_path = log_path
         self.process: subprocess.Popen | None = None
 
     def start(self) -> Self:
@@ -273,9 +335,15 @@ class Emulator:
             "none",
         ]
         logger.info("starting emulator %s", self.avd_name)
-        self.process = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
+        if self.log_path is not None:
+            with self.log_path.open("w") as log:
+                self.process = subprocess.Popen(
+                    cmd, stdout=log, stderr=subprocess.STDOUT
+                )
+        else:
+            self.process = subprocess.Popen(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
         self.wait_for_boot()
         return self
 
@@ -297,8 +365,9 @@ class Emulator:
             if getprop("sys.boot_completed") == "1":
                 # google_apis images are rootable; geckodriver needs this to
                 # chown the profile it pushes into the Fenix data dir.
-                adb("root", check=False, timeout=30)
-                adb("wait-for-device", check=False)
+                if self.root:
+                    adb("root", check=False, timeout=30)
+                    adb("wait-for-device", check=False)
                 logger.info(
                     "emulator booted: Android %s, %s",
                     getprop("ro.build.version.release"),
