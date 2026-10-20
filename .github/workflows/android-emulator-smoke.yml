@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       firefox_apk_url:
-        description: 'Optional debuggable x86_64 Fenix APK URL; empty uses Nightly'
+        description: 'Optional debuggable x86_64 Fenix APK URL; empty uses Mozilla CI debug build'
         type: string
         default: ''
       firefox_package:

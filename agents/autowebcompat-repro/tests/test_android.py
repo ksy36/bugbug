@@ -14,7 +14,44 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import smoke_android
 from hackbot_agents.autowebcompat_repro import android
+from hackbot_agents.autowebcompat_repro.android_browser import nightly_source
 from patch_firefox_mcp import patch_android_storage
+
+
+class FenixSourceTests(unittest.TestCase):
+    def test_default_is_official_debug_apk_for_emulator_architecture(self):
+        with (
+            patch.dict(
+                os.environ,
+                {"ANDROID_FIREFOX_APK_URL": "", "ANDROID_FIREFOX_PACKAGE": ""},
+            ),
+            patch(
+                "hackbot_agents.autowebcompat_repro.android_browser.host_abi",
+                return_value="x86_64",
+            ),
+        ):
+            url, package = nightly_source()
+        self.assertEqual(
+            url,
+            "https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/"
+            "gecko.v2.mozilla-central.latest.mobile.fenix-debug/artifacts/public/build/target.x86_64.apk",
+        )
+        self.assertEqual(package, "org.mozilla.fenix.debug")
+
+    def test_custom_apk_and_package_are_preserved(self):
+        with patch.dict(
+            os.environ,
+            {
+                "ANDROID_FIREFOX_APK_URL": "https://example.com/custom.apk",
+                "ANDROID_FIREFOX_PACKAGE": "org.example.firefox.debug",
+            },
+        ):
+            self.assertEqual(
+                nightly_source(),
+                ("https://example.com/custom.apk", "org.example.firefox.debug"),
+            )
+
+
 
 
 class EmulatorBootTests(unittest.TestCase):

@@ -2,9 +2,8 @@
 
 The Android counterpart to ``browser.py``: where that downloads a desktop
 Firefox and unpacks it with mozinstall, this downloads an APK and installs it
-onto the emulator with adb. mozdownload knows about Fenix directly, so channel
-and version resolution is left to it rather than built by hand -- nightly and
-release use different directory layouts on archive.mozilla.org.
+onto the emulator with adb. The Nightly test slot uses Mozilla CI's debuggable
+Fenix APK so geckodriver can use app-private storage on a locked device.
 """
 
 from __future__ import annotations
@@ -15,21 +14,28 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-import mozdownload
-import requests
-
 from .android import host_abi, install_apk, require_debuggable
 
 logger = logging.getLogger("autowebcompat-repro")
 
 AndroidChannel = Literal["nightly"] | Literal["release"]
 
-# Nightly and release ship as separate apps, so both can be installed at once
-# and selected per-task with the MCP's --android-package.
+# The CI debug build and release use separate package names.
 PACKAGE_NAMES: dict[str, str] = {
-    "nightly": "org.mozilla.fenix",
+    "nightly": "org.mozilla.fenix.debug",
     "release": "org.mozilla.firefox",
 }
+
+
+def nightly_source() -> tuple[str, str]:
+    """Resolve the debuggable Fenix APK and its installed package name."""
+    url = os.environ.get("ANDROID_FIREFOX_APK_URL") or (
+        "https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/"
+        "gecko.v2.mozilla-central.latest.mobile.fenix-debug/"
+        f"artifacts/public/build/target.{host_abi()}.apk"
+    )
+    package = os.environ.get("ANDROID_FIREFOX_PACKAGE") or PACKAGE_NAMES["nightly"]
+    return url, package
 
 
 def download_fenix(channel: AndroidChannel) -> Path:
@@ -37,13 +43,13 @@ def download_fenix(channel: AndroidChannel) -> Path:
     platform_name = f"android-{host_abi()}"
     destination = tempfile.mkdtemp(prefix=f"fenix-{channel}-", dir=Path.home())
 
-    apk_url = (
-        os.environ.get("ANDROID_FIREFOX_APK_URL") if channel == "nightly" else None
-    )
-    if apk_url:
+    if channel == "nightly":
+        import requests
+
+        apk_url, _ = nightly_source()
         apk = Path(destination) / "firefox-test.apk"
         logger.info(
-            "downloading test Firefox APK for %s from %s", platform_name, apk_url
+            "downloading debuggable Fenix APK for %s from %s", platform_name, apk_url
         )
         with requests.get(apk_url, stream=True, timeout=(30, 300)) as response:
             response.raise_for_status()
@@ -52,20 +58,15 @@ def download_fenix(channel: AndroidChannel) -> Path:
                     output.write(chunk)
         return apk
 
-    if channel == "nightly":
-        scraper_type = "daily"
-        kwargs = {}
-    else:
-        scraper_type = "release"
-        kwargs = {"version": "latest"}
+    import mozdownload
 
     logger.info("downloading Fenix %s for %s...", channel, platform_name)
     scraper = mozdownload.FactoryScraper(
-        scraper_type,
+        "release",
         application="fenix",
         platform=platform_name,
         destination=destination,
-        **kwargs,
+        version="latest",
     )
     apk = Path(scraper.download())
     logger.info("downloaded %s", apk.name)
@@ -80,8 +81,8 @@ def install_fenix(channel: AndroidChannel) -> str:
     apk.unlink(missing_ok=True)
 
     package = PACKAGE_NAMES[channel]
-    if channel == "nightly" and os.environ.get("ANDROID_FIREFOX_APK_URL"):
-        package = os.environ.get("ANDROID_FIREFOX_PACKAGE") or "org.mozilla.fenix.debug"
+    if channel == "nightly":
+        _, package = nightly_source()
     require_debuggable(package)
     logger.info("installed Fenix %s as %s", channel, package)
     return package
