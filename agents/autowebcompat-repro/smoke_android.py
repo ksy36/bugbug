@@ -61,7 +61,7 @@ async def drive(label, config, expect_ua):
         *config["args"],
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        # MCP and geckodriver diagnostics belong in the Actions log.
+        # Keep MCP diagnostics in the Actions log.
         stderr=None,
         env={**os.environ, **config.get("env", {})},
     )
@@ -158,7 +158,7 @@ async def drive(label, config, expect_ua):
                 await proc.wait()
 
 
-def diagnostics(label):
+def diagnostics(label, package=None):
     """Save device evidence before the emulator is torn down."""
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     if label == "chrome":
@@ -172,13 +172,22 @@ def diagnostics(label):
             )
         except Exception as exc:
             print(f"[chrome] collecting CDP targets failed: {exc}", file=sys.stderr)
-    for name, args in {
+    commands = {
         "logcat": ("logcat", "-d"),
         "activities": ("shell", "dumpsys", "activity", "activities"),
         "sockets": ("shell", "cat", "/proc/net/unix"),
-        "flags": ("shell", "cat", "/data/local/tmp/chrome-command-line"),
-        "chrome-package": ("shell", "dumpsys", "package", android.CHROME_PACKAGE),
-    }.items():
+    }
+    if label == "chrome":
+        commands["flags"] = ("shell", "cat", "/data/local/tmp/chrome-command-line")
+        commands["package"] = ("shell", "dumpsys", "package", android.CHROME_PACKAGE)
+    elif package:
+        commands["package"] = ("shell", "dumpsys", "package", package)
+        commands["config"] = (
+            "shell",
+            "cat",
+            f"/data/local/tmp/{package}-geckoview-config.yaml",
+        )
+    for name, args in commands.items():
         try:
             output = android.adb(*args, check=False, timeout=30)
             (ARTIFACTS / f"{label}-{name}.txt").write_text(output)
@@ -195,9 +204,6 @@ async def main():
 
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     with android.Emulator(log_path=ARTIFACTS / "emulator.log"):
-        print(
-            f"[env] uid={os.getuid()} home={os.path.expanduser('~')} tmp={os.environ.get('TMPDIR', '/tmp')}"
-        )
         print(
             f"[env] debuggable: {android.getprop('ro.debuggable')!r} "
             f"build type: {android.getprop('ro.build.type')!r}"
@@ -223,24 +229,17 @@ async def main():
                     android.start_app(android.CHROME_PACKAGE, "about:blank")
                     endpoint = android.forward_chrome_devtools()
                     config = build_android_chrome_devtools_server(endpoint)
-                    # Keep the CDP exchange: a generic Puppeteer timeout can
-                    # otherwise hide a browser/protocol version mismatch.
-                    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+                    # Retain MCP diagnostics without verbose protocol traffic.
                     config["args"] += ["--logFile", str(ARTIFACTS / "chrome-mcp.log")]
-                    config["env"] = {
-                        **config.get("env", {}),
-                        "DEBUG": "puppeteer:*",
-                    }
                     await drive(label, config, "Chrome")
                 print(f"[{label}] PASS")
             except Exception as exc:
                 failures.append(label)
                 print(f"[{label}] FAIL: {type(exc).__name__}: {exc}", file=sys.stderr)
             finally:
-                diagnostics(label)
+                diagnostics(label, package)
                 if label == "fenix" and package:
-                    # A failed geckodriver launch can leave Firefox starting
-                    # asynchronously, stealing focus and memory from Chrome.
+                    # Release Firefox's focus and memory before testing Chrome.
                     try:
                         android.adb("shell", "am", "force-stop", package)
                     except android.AndroidError as exc:

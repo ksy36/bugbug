@@ -75,9 +75,7 @@ ENV ANDROID_SDK_ROOT=/opt/android-sdk \
 # linux-aarch64 build, so the agent image must be built for amd64 to run the
 # emulator. The system image ABI is derived from the build platform so the
 # image stays correct if that ever changes.
-# API 34's Play Store image bundles Chrome 113. Its browser-level target
-# auto-attach protocol predates the tab hierarchy used by current Puppeteer.
-# Use the Play Store image directly for its preinstalled mobile Chrome.
+# API 36's Play Store image includes mobile Chrome compatible with the MCP.
 ARG ANDROID_API=36
 ARG CMDLINE_TOOLS_VERSION=11076708
 ARG TARGETARCH
@@ -102,7 +100,7 @@ RUN set -eux; \
         "platforms;android-${ANDROID_API}" "$image" > /dev/null; \
     # The data partition must be sized at creation: editing config.ini later
     # does not resize an existing userdata image, and the default leaves too
-    # little room for the ~130MB Fenix APK plus dexopt.
+    # little room for the Fenix APK and compiled app code.
     mkdir -p "$ANDROID_AVD_HOME"; \
     echo no | avdmanager create avd --force \
         --name "$ANDROID_AVD_NAME" --package "$image" \

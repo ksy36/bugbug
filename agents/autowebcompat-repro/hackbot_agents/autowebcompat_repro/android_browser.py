@@ -14,11 +14,11 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from .android import host_abi, install_apk, require_debuggable
+from .android import host_abi, install_apk
 
 logger = logging.getLogger("autowebcompat-repro")
 
-AndroidChannel = Literal["nightly"] | Literal["release"]
+AndroidChannel = Literal["nightly", "release"]
 
 # The CI debug build and release use separate package names.
 PACKAGE_NAMES: dict[str, str] = {
@@ -38,16 +38,15 @@ def nightly_source() -> tuple[str, str]:
     return url, package
 
 
-def download_fenix(channel: AndroidChannel) -> Path:
+def download_fenix(channel: AndroidChannel, destination: Path) -> Path:
     """Download the Fenix APK for a channel, matching the host architecture."""
     platform_name = f"android-{host_abi()}"
-    destination = tempfile.mkdtemp(prefix=f"fenix-{channel}-", dir=Path.home())
 
     if channel == "nightly":
         import requests
 
         apk_url, _ = nightly_source()
-        apk = Path(destination) / "firefox-test.apk"
+        apk = destination / "firefox-test.apk"
         logger.info(
             "downloading debuggable Fenix APK for %s from %s", platform_name, apk_url
         )
@@ -65,7 +64,7 @@ def download_fenix(channel: AndroidChannel) -> Path:
         "release",
         application="fenix",
         platform=platform_name,
-        destination=destination,
+        destination=str(destination),
         version="latest",
     )
     apk = Path(scraper.download())
@@ -75,15 +74,13 @@ def download_fenix(channel: AndroidChannel) -> Path:
 
 def install_fenix(channel: AndroidChannel) -> str:
     """Download and install a Fenix channel; return its package name."""
-    apk = download_fenix(channel)
-    install_apk(apk)
-    # The APK is large and only needed for the install itself.
-    apk.unlink(missing_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"fenix-{channel}-") as destination:
+        apk = download_fenix(channel, Path(destination))
+        install_apk(apk)
 
     package = PACKAGE_NAMES[channel]
     if channel == "nightly":
         _, package = nightly_source()
-    require_debuggable(package)
     logger.info("installed Fenix %s as %s", channel, package)
     return package
 
@@ -96,7 +93,7 @@ class AndroidBrowsers:
     """
 
     def __init__(self) -> None:
-        self._packages: dict[str, str] = {}
+        self._packages: dict[AndroidChannel, str] = {}
 
     def package(self, channel: AndroidChannel) -> str:
         if channel not in self._packages:

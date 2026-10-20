@@ -30,7 +30,7 @@ from hackbot_runtime.claude import Reporter
 from pydantic import BaseModel
 
 from . import android
-from .android_browser import AndroidBrowsers
+from .android_browser import AndroidBrowsers, AndroidChannel
 from .browser import ChromeBrowsers, FirefoxBrowsers
 from .config import (
     ANDROID_DEVTOOLS_TOOLS,
@@ -541,7 +541,6 @@ class AndroidBugReproduction(Task):
         self,
         task_config: TaskConfig,
         run_tracker: RunTracker,
-        package: str,
         chrome_ws_endpoint: str,
         input_data: AutoWebcompatInput,
         bugzilla_mcp_server: McpServerConfig,
@@ -642,7 +641,6 @@ class AndroidStepsReproduction(Task):
         self,
         task_config: TaskConfig,
         run_tracker: RunTracker,
-        package: str,
         steps: str,
     ):
         super().__init__(task_config, run_tracker)
@@ -945,7 +943,7 @@ async def run_android_repro(
         chrome_ws_endpoint = android.forward_chrome_devtools()
 
         async def next_repro_task(
-            channel: FirefoxChannel, android_channel: str
+            channel: FirefoxChannel, android_channel: AndroidChannel
         ) -> None:
             package = browsers.package(android_channel)
             android.prepare_firefox(package)
@@ -958,7 +956,6 @@ async def run_android_repro(
                 task: Task = AndroidBugReproduction(
                     default_config,
                     tracker,
-                    package,
                     chrome_ws_endpoint,
                     input_data,
                     bugzilla_mcp_server,
@@ -968,7 +965,6 @@ async def run_android_repro(
                 task = AndroidStepsReproduction(
                     default_config,
                     tracker,
-                    package,
                     initial_repro.steps,
                 )
             repro_results.set_result(channel, None, await task.run())

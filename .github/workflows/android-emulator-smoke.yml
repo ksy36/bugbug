@@ -11,7 +11,6 @@ on:
         description: 'Package name of the optional test APK'
         type: string
         default: 'org.mozilla.fenix.debug'
-  # ponytail: also runs on push while iterating; drop once green.
   push:
     paths:
       - 'agents/autowebcompat-repro/**'

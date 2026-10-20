@@ -2,13 +2,8 @@
 
 The SDK, system image and AVD are baked into the image at build time (see the
 Dockerfile), so this module only starts the emulator that is already there and
-talks to it over adb. Nothing here downloads or creates an AVD.
-
-Adapted from the prior art on jrmuizel's `android` branch, but calling the
-``emulator`` and ``adb`` binaries directly rather than going through
-``mozrunner.devices.android_device``, which expects a mozilla-central checkout
-(its ``substs`` dict wants a ``top_srcdir``) that does not exist in the
-container.
+talks to it over adb. Browsers start on the device before their DevTools MCP
+servers attach through forwarded ports.
 """
 
 from __future__ import annotations
@@ -60,12 +55,7 @@ class AndroidError(Exception):
 
 
 def host_abi() -> str:
-    """The Android ABI matching the host architecture.
-
-    The image is built for whatever architecture it runs on, so the system
-    image, and therefore the Fenix APK, has to match the host rather than being
-    pinned. Production runs x86_64; local arm64 hosts are also supported.
-    """
+    """Return the Android APK ABI for the container's architecture."""
     machine = platform.machine().lower()
     if machine in ("x86_64", "amd64"):
         return "x86_64"
@@ -127,8 +117,7 @@ def prepare_adb() -> None:
 def install_apk(apk: Path) -> None:
     """Install an APK, replacing any existing copy of the same package."""
     logger.info("installing %s", apk.name)
-    # -r replaces an existing install; -d allows a version downgrade, which
-    # matters when the release APK lands after a newer nightly.
+    # Allow replacement and downgrades when testing a different build.
     output = adb("install", "-r", "-d", str(apk), timeout=600)
     if "Success" not in output:
         raise AndroidError(f"Installing {apk.name} failed: {output.strip()}")
@@ -163,13 +152,7 @@ def launcher_activity(package: str) -> str:
 
 
 def start_app(package: str, url: str | None = None) -> None:
-    """Launch an app, optionally at a URL, and wait for it to come up.
-
-    Both browsers need this before their MCP server first drives them:
-    geckodriver's initial launch of a not-yet-running Fenix fails with
-    ``Resource temporarily unavailable`` (EAGAIN), and the Chrome DevTools MCP
-    cannot launch Chrome at all -- it only attaches to a running instance.
-    """
+    """Launch an app, optionally at a URL, and wait for its process."""
     args = ["shell", "am", "start", "-n", launcher_activity(package)]
     if url is not None:
         args += ["-a", "android.intent.action.VIEW", "-d", url]
@@ -323,7 +306,7 @@ def wait_for_firefox(timeout: int = 120) -> None:
 
 def forward_chrome_devtools(port: int = CHROME_DEVTOOLS_PORT) -> str:
     """Expose Chrome's on-device DevTools socket on a host port."""
-    # Preserve geckodriver's forwards when both browsers share the device.
+    # Preserve Firefox's forwards when both browsers share the device.
     adb("forward", "--remove", f"tcp:{port}", check=False)
     adb("forward", f"tcp:{port}", f"localabstract:{CHROME_SOCKET}")
     # A forward can succeed before the HTTP server is ready. Discover the

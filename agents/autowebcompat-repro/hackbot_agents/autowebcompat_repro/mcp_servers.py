@@ -11,6 +11,8 @@ from pathlib import Path
 
 from claude_agent_sdk.types import McpStdioServerConfig
 
+from .android import FIREFOX_MARIONETTE_PORT
+
 
 def resolve_bin(bin_name: str) -> str:
     """Resolve an installed MCP server binary to an absolute path."""
@@ -81,8 +83,6 @@ def build_android_firefox_devtools_server(
     reachable through MCP's existing-instance mode. Omit Android launch
     capabilities so geckodriver does not restart the app or manage its profile.
     """
-    from .android import FIREFOX_MARIONETTE_PORT
-
     args = ["--connect-existing", "--marionette-port", str(FIREFOX_MARIONETTE_PORT)]
     if enable_script:
         args.append("--enable-script")

@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import smoke_android
-from hackbot_agents.autowebcompat_repro import android
+from hackbot_agents.autowebcompat_repro import android, android_browser
 from hackbot_agents.autowebcompat_repro.android_browser import nightly_source
 
 
@@ -50,6 +50,42 @@ class FenixSourceTests(unittest.TestCase):
                 nightly_source(),
                 ("https://example.com/custom.apk", "org.example.firefox.debug"),
             )
+
+
+class FenixInstallTests(unittest.TestCase):
+    def test_removes_download_directory_after_success_or_install_failure(self):
+        for failure in (None, android.AndroidError("install failed")):
+            with self.subTest(failure=failure):
+                downloads = []
+
+                def download(channel, destination):
+                    apk = destination / "firefox.apk"
+                    apk.write_bytes(b"test apk")
+                    downloads.append(apk)
+                    return apk
+
+                with (
+                    patch.object(
+                        android_browser, "download_fenix", side_effect=download
+                    ),
+                    patch.object(android_browser, "install_apk", side_effect=failure),
+                    patch.object(
+                        android_browser,
+                        "nightly_source",
+                        return_value=("url", "org.example.debug"),
+                    ),
+                ):
+                    if failure:
+                        with self.assertRaisesRegex(
+                            android.AndroidError, "install failed"
+                        ):
+                            android_browser.install_fenix("nightly")
+                    else:
+                        self.assertEqual(
+                            android_browser.install_fenix("nightly"),
+                            "org.example.debug",
+                        )
+                self.assertFalse(downloads[0].parent.exists())
 
 
 class FirefoxAttachTests(unittest.TestCase):
