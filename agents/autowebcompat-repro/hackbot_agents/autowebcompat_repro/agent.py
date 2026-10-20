@@ -591,6 +591,8 @@ their mobile layout.
 3. Cross-check in Chrome for Android: run the same steps with the Chrome
    DevTools MCP, which is attached to Chrome on the same emulator, and report
    `chrome_reproduced`.
+   - Start with `new_page` at the affected URL to create and select a tab.
+     `navigate_page` requires an already selected page.
    - A genuine web-compat issue reproduces in Firefox but not in Chrome. If the
      behavior is identical in both, your steps may be wrong; refine the steps
      and re-check before concluding.

@@ -12,13 +12,9 @@ import logging
 import os
 import sys
 from pathlib import Path
+from urllib.request import urlopen
 
 from hackbot_agents.autowebcompat_repro import android
-from hackbot_agents.autowebcompat_repro.android_browser import install_fenix
-from hackbot_agents.autowebcompat_repro.mcp_servers import (
-    build_android_chrome_devtools_server,
-    build_android_firefox_devtools_server,
-)
 
 URL = "https://example.com/"
 ARTIFACTS = Path("/tmp/android-smoke-artifacts")
@@ -94,6 +90,20 @@ async def drive(label, config, expect_ua):
         )
         await proc.stdin.drain()
 
+        if label == "chrome":
+            # Connecting to the Android browser endpoint does not guarantee
+            # that MCP has a selected page. new_page creates and selects one;
+            # navigate_page requires an existing selection.
+            page = tool_text(
+                await mcp_call(
+                    proc,
+                    "tools/call",
+                    {"name": "new_page", "arguments": {"url": "about:blank"}},
+                    5,
+                )
+            )
+            print(f"[{label}] new page: {page.strip()[:120]}")
+
         nav = tool_text(
             await mcp_call(
                 proc,
@@ -122,7 +132,9 @@ async def drive(label, config, expect_ua):
                 "tools/call",
                 {
                     "name": "evaluate_script",
-                    "arguments": {"function": "() => navigator.userAgent"},
+                    "arguments": {
+                        "function": "() => ({ userAgent: navigator.userAgent, url: location.href })"
+                    },
                 },
                 4,
             )
@@ -131,6 +143,8 @@ async def drive(label, config, expect_ua):
             raise RuntimeError(f"UA missing {expect_ua!r}: {ua[:300]}")
         if "Android" not in ua:
             raise RuntimeError(f"UA is not Android: {ua[:300]}")
+        if URL not in ua:
+            raise RuntimeError(f"Browser did not reach {URL}: {ua[:300]}")
         if (
             label == "chrome"
             and android.CHROME_BROWSER == "mobile"
@@ -151,6 +165,17 @@ async def drive(label, config, expect_ua):
 def diagnostics(label):
     """Save device evidence before the emulator is torn down."""
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    if label == "chrome":
+        try:
+            with urlopen(
+                f"http://127.0.0.1:{android.CHROME_DEVTOOLS_PORT}/json/list", timeout=5
+            ) as response:
+                targets = json.load(response)
+            (ARTIFACTS / "chrome-targets.json").write_text(
+                json.dumps(targets, indent=2)
+            )
+        except Exception as exc:
+            print(f"[chrome] collecting CDP targets failed: {exc}", file=sys.stderr)
     for name, args in {
         "logcat": ("logcat", "-d", "-t", "2000"),
         "activities": ("shell", "dumpsys", "activity", "activities"),
@@ -166,6 +191,12 @@ def diagnostics(label):
 
 
 async def main():
+    from hackbot_agents.autowebcompat_repro.android_browser import install_fenix
+    from hackbot_agents.autowebcompat_repro.mcp_servers import (
+        build_android_chrome_devtools_server,
+        build_android_firefox_devtools_server,
+    )
+
     with android.Emulator():
         # Diagnostics: the fchown failure geckodriver reports when pushing a
         # Fenix profile depends on who adbd thinks we are and where we stage

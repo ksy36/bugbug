@@ -10,10 +10,81 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
+import smoke_android
 from extract_mobile_chrome import export_chrome
 from hackbot_agents.autowebcompat_repro import android
+
+
+class ChromeSmokeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_creates_page_before_navigation(self):
+        proc = SimpleNamespace(
+            stdin=SimpleNamespace(write=Mock(), drain=AsyncMock()),
+            returncode=None,
+            terminate=Mock(),
+            wait=AsyncMock(),
+        )
+
+        def result(text):
+            return {"result": {"content": [{"type": "text", "text": text}]}}
+
+        call = AsyncMock(
+            side_effect=[
+                {"result": {}},
+                result("Created page"),
+                result("Navigated"),
+                result("uid=1 Example Domain"),
+                result(f"Android Mobile Chrome {smoke_android.URL}"),
+            ]
+        )
+        with (
+            patch.object(
+                smoke_android.asyncio, "create_subprocess_exec", return_value=proc
+            ),
+            patch.object(smoke_android, "mcp_call", call),
+            patch("builtins.print"),
+        ):
+            await smoke_android.drive(
+                "chrome", {"command": "mcp", "args": []}, "Chrome"
+            )
+        names = [c.args[2]["name"] for c in call.await_args_list[1:]]
+        self.assertEqual(
+            names, ["new_page", "navigate_page", "take_snapshot", "evaluate_script"]
+        )
+        proc.terminate.assert_called_once()
+
+    async def test_stops_when_tab_creation_fails(self):
+        proc = SimpleNamespace(
+            stdin=SimpleNamespace(write=Mock(), drain=AsyncMock()),
+            returncode=None,
+            terminate=Mock(),
+            wait=AsyncMock(),
+        )
+        call = AsyncMock(
+            side_effect=[
+                {"result": {}},
+                {
+                    "result": {
+                        "isError": True,
+                        "content": [{"type": "text", "text": "tab creation failed"}],
+                    }
+                },
+            ]
+        )
+        with (
+            patch.object(
+                smoke_android.asyncio, "create_subprocess_exec", return_value=proc
+            ),
+            patch.object(smoke_android, "mcp_call", call),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "tab creation failed"):
+                await smoke_android.drive(
+                    "chrome", {"command": "mcp", "args": []}, "Chrome"
+                )
+        self.assertEqual(call.await_count, 2)
+        proc.terminate.assert_called_once()
 
 
 class ChromeForwardTests(unittest.TestCase):
