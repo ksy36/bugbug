@@ -73,7 +73,10 @@ ENV ANDROID_SDK_ROOT=/opt/android-sdk \
 # linux-aarch64 build, so the agent image must be built for amd64 to run the
 # emulator. The system image ABI is derived from the build platform so the
 # image stays correct if that ever changes.
-ARG ANDROID_API=34
+# API 34's Play Store image bundles Chrome 113. Its browser-level target
+# auto-attach protocol predates the tab hierarchy used by current Puppeteer.
+# Keep the donor and rootable test image on the same newer API level.
+ARG ANDROID_API=36
 ARG CMDLINE_TOOLS_VERSION=11076708
 ARG TARGETARCH
 

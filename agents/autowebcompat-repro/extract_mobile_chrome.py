@@ -85,6 +85,14 @@ def export_chrome(destination: Path) -> None:
         "api": android.getprop("ro.build.version.sdk"),
         "abi": android.getprop("ro.product.cpu.abi"),
         "fingerprint": android.getprop("ro.build.fingerprint"),
+        "chrome_version": next(
+            (
+                line.strip().removeprefix("versionName=")
+                for line in active_details.splitlines()
+                if line.strip().startswith("versionName=")
+            ),
+            "unknown",
+        ),
         "packages": packages,
     }
     (destination / "chrome-package.txt").write_text(details)

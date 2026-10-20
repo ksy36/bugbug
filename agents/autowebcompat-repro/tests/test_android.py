@@ -258,6 +258,7 @@ class MobileChromeTests(unittest.TestCase):
             ):
                 export_chrome(directory)
             manifest = json.loads((directory / "manifest.json").read_text())
+            self.assertEqual(manifest["chrome_version"], "113.0.5672.136")
             self.assertEqual(len(manifest["packages"]), 2)
             self.assertEqual(manifest["packages"][-1]["package"], "com.android.chrome")
             self.assertEqual(len(manifest["packages"][-1]["apks"]), 2)

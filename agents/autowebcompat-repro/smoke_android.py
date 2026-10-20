@@ -231,6 +231,14 @@ async def main():
                     android.start_app(android.CHROME_PACKAGE, "about:blank")
                     endpoint = android.forward_chrome_devtools()
                     config = build_android_chrome_devtools_server(endpoint)
+                    # Keep the CDP exchange: a generic Puppeteer timeout can
+                    # otherwise hide a browser/protocol version mismatch.
+                    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+                    config["args"] += ["--logFile", str(ARTIFACTS / "chrome-mcp.log")]
+                    config["env"] = {
+                        **config.get("env", {}),
+                        "DEBUG": "puppeteer:*",
+                    }
                     await drive(label, config, "Chrome")
                 print(f"[{label}] PASS")
             except Exception as exc:
