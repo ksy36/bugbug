@@ -27,7 +27,8 @@ def patch_android_storage(path: Path) -> None:
     replacement = needle.replace(
         "const serviceBuilder = new firefox.ServiceBuilder(geckodriverPath);",
         "const serviceBuilder = new firefox.ServiceBuilder(geckodriverPath)"
-        '.addArguments("--android-storage=app");',
+        '.addArguments("--android-storage=app", "--log", "trace")'
+        '.setStdio(["ignore", 2, 2]);',
     )
     path.write_text(source.replace(needle, replacement))
 

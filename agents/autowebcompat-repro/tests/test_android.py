@@ -13,12 +13,57 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import smoke_android
-from hackbot_agents.autowebcompat_repro import android
+from hackbot_agents.autowebcompat_repro import android, android_browser
 from hackbot_agents.autowebcompat_repro.android_browser import nightly_source
 from patch_firefox_mcp import patch_android_storage
 
 
 class FenixSourceTests(unittest.TestCase):
+    def test_compiles_installed_app_before_returning_package(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(
+                android_browser, "download_fenix", return_value=Path(tmp) / "test.apk"
+            ),
+            patch.object(android_browser, "install_apk"),
+            patch.object(android_browser, "require_debuggable"),
+            patch.object(
+                android_browser,
+                "nightly_source",
+                return_value=("url", "org.example.debug"),
+            ),
+            patch.object(android_browser, "adb", return_value="Success\n") as adb,
+        ):
+            self.assertEqual(
+                android_browser.install_fenix("nightly"), "org.example.debug"
+            )
+        adb.assert_called_once_with(
+            "shell",
+            "cmd",
+            "package",
+            "compile",
+            "-m",
+            "speed",
+            "-f",
+            "org.example.debug",
+            timeout=300,
+        )
+
+    def test_compilation_failure_is_reported(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(
+                android_browser, "download_fenix", return_value=Path(tmp) / "test.apk"
+            ),
+            patch.object(android_browser, "install_apk"),
+            patch.object(android_browser, "require_debuggable"),
+            patch.object(
+                android_browser, "adb", return_value="Failure [dexopt failed]"
+            ),
+        ):
+            with self.assertRaisesRegex(android.AndroidError, "app compilation failed"):
+                android_browser.install_fenix("nightly")
+
     def test_default_is_official_debug_apk_for_emulator_architecture(self):
         with (
             patch.dict(
@@ -368,7 +413,10 @@ class FirefoxMcpPatchTests(unittest.TestCase):
             patch_android_storage(path)
             patched = path.read_text()
         android_source, desktop_source = patched.split("} else if")
-        self.assertIn('.addArguments("--android-storage=app")', android_source)
+        self.assertIn(
+            '.addArguments("--android-storage=app", "--log", "trace")', android_source
+        )
+        self.assertIn('.setStdio(["ignore", 2, 2])', android_source)
         self.assertNotIn("--android-storage", desktop_source)
 
     def test_unknown_package_layout_fails_build(self):

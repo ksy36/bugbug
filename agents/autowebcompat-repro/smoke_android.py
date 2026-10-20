@@ -173,7 +173,7 @@ def diagnostics(label):
         except Exception as exc:
             print(f"[chrome] collecting CDP targets failed: {exc}", file=sys.stderr)
     for name, args in {
-        "logcat": ("logcat", "-d", "-t", "2000"),
+        "logcat": ("logcat", "-d"),
         "activities": ("shell", "dumpsys", "activity", "activities"),
         "sockets": ("shell", "cat", "/proc/net/unix"),
         "flags": ("shell", "cat", "/data/local/tmp/chrome-command-line"),
@@ -207,6 +207,7 @@ async def main():
         # Exercise each browser even if the other fails during setup or MCP
         # control. Otherwise a missing Chrome socket hides all Firefox results.
         for label in ("fenix", "chrome"):
+            package = None
             try:
                 print(f"[{label}] starting smoke test")
                 if label == "fenix":
@@ -239,6 +240,13 @@ async def main():
                 print(f"[{label}] FAIL: {type(exc).__name__}: {exc}", file=sys.stderr)
             finally:
                 diagnostics(label)
+                if label == "fenix" and package:
+                    # A failed geckodriver launch can leave Firefox starting
+                    # asynchronously, stealing focus and memory from Chrome.
+                    try:
+                        android.adb("shell", "am", "force-stop", package)
+                    except android.AndroidError as exc:
+                        print(f"[fenix] stopping app failed: {exc}", file=sys.stderr)
         if failures:
             raise RuntimeError(f"Browser smoke tests failed: {', '.join(failures)}")
 

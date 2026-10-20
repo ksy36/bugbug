@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from .android import host_abi, install_apk, require_debuggable
+from .android import AndroidError, adb, host_abi, install_apk, require_debuggable
 
 logger = logging.getLogger("autowebcompat-repro")
 
@@ -84,6 +84,22 @@ def install_fenix(channel: AndroidChannel) -> str:
     if channel == "nightly":
         _, package = nightly_source()
     require_debuggable(package)
+    # Debug APKs otherwise verify/JIT code during geckodriver's short ADB
+    # launch window. Compiled code survives its subsequent `pm clear`.
+    logger.info("compiling Firefox app code before automation: %s", package)
+    result = adb(
+        "shell",
+        "cmd",
+        "package",
+        "compile",
+        "-m",
+        "speed",
+        "-f",
+        package,
+        timeout=300,
+    )
+    if "Success" not in result:
+        raise AndroidError(f"Firefox app compilation failed for {package}: {result}")
     logger.info("installed Fenix %s as %s", channel, package)
     return package
 
