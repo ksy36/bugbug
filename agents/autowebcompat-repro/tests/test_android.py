@@ -52,6 +52,60 @@ class FenixSourceTests(unittest.TestCase):
             )
 
 
+class LauncherTests(unittest.TestCase):
+    def test_queries_main_launcher_with_explicit_package(self):
+        package = "org.mozilla.fenix.debug"
+        component = f"{package}/.App"
+        with patch.object(android, "adb", return_value=component + "\n") as adb:
+            self.assertEqual(android.launcher_activity(package), component)
+        adb.assert_called_once_with(
+            "shell",
+            "cmd",
+            "package",
+            "query-activities",
+            "--components",
+            "-a",
+            "android.intent.action.MAIN",
+            "-c",
+            "android.intent.category.LAUNCHER",
+            "-p",
+            package,
+        )
+
+    def test_never_selects_android_resolver_as_browser(self):
+        with patch.object(
+            android,
+            "adb",
+            return_value="android/com.android.internal.app.ResolverActivity\n",
+        ):
+            with self.assertRaisesRegex(
+                android.AndroidError, "No launcher activity found"
+            ):
+                android.launcher_activity("org.mozilla.fenix.debug")
+
+    def test_starts_fenix_using_main_launcher_intent(self):
+        package = "org.mozilla.fenix.debug"
+        with (
+            patch.object(android, "launcher_activity", return_value=f"{package}/.App"),
+            patch.object(
+                android, "adb", side_effect=["Starting: Intent", "1234\n"]
+            ) as adb,
+        ):
+            android.start_app(package)
+        self.assertEqual(
+            adb.call_args_list[0],
+            unittest.mock.call(
+                "shell",
+                "am",
+                "start",
+                "-n",
+                f"{package}/.App",
+                "-a",
+                "android.intent.action.MAIN",
+                "-c",
+                "android.intent.category.LAUNCHER",
+            ),
+        )
 
 
 class EmulatorBootTests(unittest.TestCase):

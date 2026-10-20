@@ -141,13 +141,16 @@ def launcher_activity(package: str) -> str:
         "shell",
         "cmd",
         "package",
-        "resolve-activity",
-        "--brief",
+        "query-activities",
+        "--components",
+        "-a",
+        "android.intent.action.MAIN",
         "-c",
         "android.intent.category.LAUNCHER",
+        "-p",
         package,
     )
-    for line in reversed(output.strip().splitlines()):
+    for line in output.strip().splitlines():
         line = line.strip()
         if line.startswith(f"{package}/"):
             return line
@@ -165,7 +168,16 @@ def start_app(package: str, url: str | None = None) -> None:
     args = ["shell", "am", "start", "-n", launcher_activity(package)]
     if url is not None:
         args += ["-a", "android.intent.action.VIEW", "-d", url]
-    adb(*args)
+    else:
+        args += [
+            "-a",
+            "android.intent.action.MAIN",
+            "-c",
+            "android.intent.category.LAUNCHER",
+        ]
+    output = adb(*args)
+    if "Error:" in output or "Error type" in output:
+        raise AndroidError(f"Launching {package} failed: {output.strip()}")
 
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
