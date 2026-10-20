@@ -4,9 +4,8 @@
 
 """Checks that do not require an Android device or Docker."""
 
-import hashlib
 import io
-import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,8 +13,101 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import smoke_android
-from extract_mobile_chrome import export_chrome
 from hackbot_agents.autowebcompat_repro import android
+from patch_firefox_mcp import patch_android_storage
+
+
+class EmulatorBootTests(unittest.TestCase):
+    def test_locked_image_boot_does_not_request_root(self):
+        with (
+            patch.object(
+                android,
+                "adb",
+                return_value="List of devices attached\nemulator-5554 device\n",
+            ) as adb,
+            patch.object(android, "getprop", side_effect=["1", "16", "x86_64"]),
+        ):
+            android.Emulator().wait_for_boot()
+        self.assertEqual(
+            adb.call_args_list, [unittest.mock.call("devices", "-l", timeout=10)]
+        )
+
+    def test_unauthorized_device_fails_before_boot_timeout(self):
+        clock = [0]
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        with (
+            patch.object(
+                android,
+                "adb",
+                return_value="List of devices attached\nemulator-5554 unauthorized\n",
+            ),
+            patch.object(android, "getprop") as getprop,
+            patch.object(android.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(android.time, "sleep", side_effect=sleep),
+        ):
+            with self.assertRaisesRegex(
+                android.AndroidError, "ADB device unauthorized"
+            ):
+                android.Emulator().wait_for_boot()
+            getprop.assert_not_called()
+        self.assertEqual(clock[0], android.ADB_AUTH_TIMEOUT)
+
+    def test_missing_device_fails_before_boot_timeout(self):
+        clock = [0]
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        with (
+            patch.object(android, "adb", return_value="List of devices attached\n"),
+            patch.object(android.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(android.time, "sleep", side_effect=sleep),
+        ):
+            with self.assertRaisesRegex(android.AndroidError, "did not connect to ADB"):
+                android.Emulator().wait_for_boot()
+        self.assertEqual(clock[0], android.ADB_CONNECT_TIMEOUT)
+
+    def test_failed_start_terminates_emulator(self):
+        process = Mock()
+        process.poll.return_value = None
+        with (
+            patch.object(android, "prepare_adb"),
+            patch.object(android, "sdk_binary", return_value=Path("/sdk/emulator")),
+            patch.object(android.subprocess, "Popen", return_value=process),
+            patch.object(
+                android.Emulator,
+                "wait_for_boot",
+                side_effect=android.AndroidError("unauthorized"),
+            ),
+        ):
+            emulator = android.Emulator()
+            with self.assertRaisesRegex(android.AndroidError, "unauthorized"):
+                emulator.start()
+        process.terminate.assert_called_once()
+        process.wait.assert_called_once()
+        self.assertIsNone(emulator.process)
+
+    def test_creates_authentication_key_before_starting_adb(self):
+        calls = []
+
+        def run(cmd, **kwargs):
+            calls.append(cmd)
+            return SimpleNamespace(returncode=0, stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            key = Path(tmp) / "android" / "adbkey"
+            with (
+                patch.dict(os.environ, {"ADB_VENDOR_KEYS": str(key)}),
+                patch.object(android, "sdk_binary", return_value=Path("/sdk/adb")),
+                patch.object(android.subprocess, "run", side_effect=run),
+            ):
+                android.prepare_adb()
+            self.assertEqual(
+                calls, [["/sdk/adb", "keygen", str(key)], ["/sdk/adb", "start-server"]]
+            )
 
 
 class ChromeSmokeTests(unittest.IsolatedAsyncioTestCase):
@@ -95,9 +187,6 @@ class ChromeForwardTests(unittest.TestCase):
         )
         with (
             patch.object(android, "adb") as adb,
-            patch.object(
-                android, "devtools_socket_name", return_value="chrome_devtools_remote"
-            ),
             patch.object(android, "urlopen", return_value=response),
         ):
             self.assertEqual(android.forward_chrome_devtools(), endpoint)
@@ -118,9 +207,6 @@ class ChromeForwardTests(unittest.TestCase):
         with (
             patch.object(android, "adb"),
             patch.object(
-                android, "devtools_socket_name", return_value="chrome_devtools_remote"
-            ),
-            patch.object(
                 android, "urlopen", side_effect=[OSError("not ready"), response]
             ) as connect,
             patch.object(android.time, "sleep"),
@@ -131,9 +217,6 @@ class ChromeForwardTests(unittest.TestCase):
     def test_reports_readiness_timeout(self):
         with (
             patch.object(android, "adb"),
-            patch.object(
-                android, "devtools_socket_name", return_value="chrome_devtools_remote"
-            ),
             patch.object(android, "urlopen", side_effect=OSError("connection refused")),
             patch.object(android.time, "monotonic", side_effect=[0, 0, 61]),
             patch.object(android.time, "sleep"),
@@ -142,156 +225,64 @@ class ChromeForwardTests(unittest.TestCase):
                 android.forward_chrome_devtools()
 
 
-class MobileChromeTests(unittest.TestCase):
-    def bundle(self, directory):
-        packages = []
-        for label, files in [
-            ("TrichromeLibrary", ["library.apk"]),
-            ("com.android.chrome", ["base.apk", "split-x86.apk"]),
-        ]:
-            entries = []
-            for name in files:
-                data = name.encode()
-                (directory / name).write_bytes(data)
-                entries.append(
-                    {"file": name, "sha256": hashlib.sha256(data).hexdigest()}
-                )
-            packages.append({"package": label, "apks": entries})
-        manifest = {
-            "abi": "x86_64",
-            "api": "34",
-            "fingerprint": "donor",
-            "packages": packages,
-        }
-        (directory / "manifest.json").write_text(json.dumps(manifest))
-
-    def test_installs_library_before_chrome_with_all_splits(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp)
-            self.bundle(directory)
-            with (
-                patch.object(android, "getprop", side_effect=["x86_64", "34"]),
-                patch.object(android, "adb", return_value="Success") as adb,
-            ):
-                android.install_mobile_chrome(directory)
-            self.assertEqual(
-                adb.call_args_list[:2],
-                [
-                    unittest.mock.call(
-                        "install", "-r", str(directory / "library.apk"), timeout=600
-                    ),
-                    unittest.mock.call(
-                        "install-multiple",
-                        "-r",
-                        str(directory / "base.apk"),
-                        str(directory / "split-x86.apk"),
-                        timeout=600,
-                    ),
-                ],
-            )
-
-    def test_rejects_corrupt_bundle_before_installing_anything(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp)
-            self.bundle(directory)
-            (directory / "split-x86.apk").write_bytes(b"corrupt")
-            with (
-                patch.object(android, "getprop", side_effect=["x86_64", "34"]),
-                patch.object(android, "adb") as adb,
-            ):
-                with self.assertRaisesRegex(android.AndroidError, "checksum"):
-                    android.install_mobile_chrome(directory)
-                adb.assert_not_called()
-
-    def test_rejects_wrong_architecture(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp)
-            self.bundle(directory)
-            with (
-                patch.object(android, "getprop", return_value="arm64-v8a"),
-                patch.object(android, "adb") as adb,
-            ):
-                with self.assertRaisesRegex(android.AndroidError, "ABI"):
-                    android.install_mobile_chrome(directory)
-                adb.assert_not_called()
-
-    def test_exports_hidden_library_and_chrome_splits(self):
-        chrome = [
-            "/data/app/com.android.chrome/Chrome.apk",
-            "/data/app/com.android.chrome/split.apk",
-        ]
-        library = "/data/app/com.google.android.trichromelibrary_567263637/TrichromeLibrary.apk"
-        details = (
-            "Packages:\n"
-            "  Package [com.android.chrome]:\n"
-            "    versionName=113.0.5672.136\n"
-            "    usesStaticLibraries:\n"
-            "      com.google.android.trichromelibrary version:567263637\n"
-            "    usesLibraryFiles:\n"
-            f"      {library}\n"
-            "    timeStamp=2026-10-20\n"
-            "Hidden system packages:\n"
-            "  Package [com.android.chrome]:\n"
-            "    codePath=/product/app/Chrome-Stub\n"
-        )
-        pulled = []
-
-        def adb(*args, **kwargs):
+class LockedImageTests(unittest.TestCase):
+    def test_chrome_uses_preinstalled_package_without_installing_apks(self):
+        def response(*args, **kwargs):
             if args[:3] == ("shell", "pm", "path"):
-                return "\n".join(f"package:{path}" for path in chrome)
+                return "package:/data/app/com.android.chrome/base.apk\n"
             if args[:3] == ("shell", "dumpsys", "package"):
-                return details
-            if args[0] == "pull":
-                pulled.append(args[1])
-                Path(args[2]).write_bytes(
-                    b"library" if "TrichromeLibrary" in args[1] else args[1].encode()
-                )
-                return ""
-            raise AssertionError(f"Unexpected ADB command: {args}")
+                return "versionName=140.0\n"
+            return ""
 
-        with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp)
-            with (
-                patch.object(android, "adb", side_effect=adb),
-                patch.object(android, "getprop", side_effect=["34", "x86_64", "donor"]),
-                patch("builtins.print"),
+        with patch.object(android, "adb", side_effect=response) as adb:
+            android.prepare_chrome()
+        calls = [call.args for call in adb.call_args_list]
+        self.assertIn(
+            ("shell", "am", "set-debug-app", "--persistent", "com.android.chrome"),
+            calls,
+        )
+        self.assertFalse(
+            any(args[0].startswith("install") or args[0] == "root" for args in calls)
+        )
+
+    def test_firefox_preflight_accepts_app_user(self):
+        with patch.object(
+            android, "adb", return_value="uid=10123(u0_a123) gid=10123\n"
+        ):
+            android.require_debuggable("org.mozilla.fenix.debug")
+
+    def test_firefox_preflight_reports_nondebuggable_apk(self):
+        with patch.object(
+            android, "adb", side_effect=android.AndroidError("package not debuggable")
+        ):
+            with self.assertRaisesRegex(
+                android.AndroidError, "requires a debuggable APK"
             ):
-                export_chrome(directory)
-            manifest = json.loads((directory / "manifest.json").read_text())
-            self.assertEqual(manifest["chrome_version"], "113.0.5672.136")
-            self.assertEqual(len(manifest["packages"]), 2)
-            self.assertEqual(manifest["packages"][-1]["package"], "com.android.chrome")
-            self.assertEqual(len(manifest["packages"][-1]["apks"]), 2)
-            self.assertEqual(pulled, [library, *chrome])
+                android.require_debuggable("org.mozilla.fenix")
 
-    def test_rejects_unresolved_trichrome_before_pulling(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with patch.object(
-                android,
-                "adb",
-                side_effect=[
-                    "package:/data/app/Chrome.apk\n",
-                    "Packages:\n    usesStaticLibraries:\n      com.google.android.trichromelibrary version:123\n",
-                ],
-            ) as adb:
-                with self.assertRaisesRegex(
-                    android.AndroidError, "no resolved library"
-                ):
-                    export_chrome(Path(tmp))
-                self.assertEqual(adb.call_count, 2)
 
-    def test_rejects_old_stub_bundle_before_installing(self):
+class FirefoxMcpPatchTests(unittest.TestCase):
+    def test_changes_android_launcher_only(self):
+        source = (
+            "if (isAndroid) {\n"
+            "          const serviceBuilder = new firefox.ServiceBuilder(geckodriverPath);\n"
+            "          this.driver = firefox.Driver.createSession(caps, serviceBuilder.build());\n"
+            "        } else if (this.options.connectExisting) {\n"
+            "          const serviceBuilder = new firefox.ServiceBuilder(geckodriverPath);\n"
+            '          serviceBuilder.addArguments("--connect-existing");\n'
+        )
         with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp)
-            self.bundle(directory)
-            manifest_path = directory / "manifest.json"
-            manifest = json.loads(manifest_path.read_text())
-            manifest["packages"][0]["apks"][0]["file"] = "TrichromeLibrary-Stub.apk"
-            manifest_path.write_text(json.dumps(manifest))
-            with (
-                patch.object(android, "getprop", side_effect=["x86_64", "34"]),
-                patch.object(android, "adb") as adb,
-            ):
-                with self.assertRaisesRegex(android.AndroidError, "placeholder"):
-                    android.install_mobile_chrome(directory)
-                adb.assert_not_called()
+            path = Path(tmp) / "index.js"
+            path.write_text(source)
+            patch_android_storage(path)
+            patched = path.read_text()
+        android_source, desktop_source = patched.split("} else if")
+        self.assertIn('.addArguments("--android-storage=app")', android_source)
+        self.assertNotIn("--android-storage", desktop_source)
+
+    def test_unknown_package_layout_fails_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "index.js"
+            path.write_text("changed upstream package")
+            with self.assertRaisesRegex(RuntimeError, "Android launcher changed"):
+                patch_android_storage(path)

@@ -10,13 +10,15 @@ release use different directory layouts on archive.mozilla.org.
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Literal
 
 import mozdownload
+import requests
 
-from .android import host_abi, install_apk
+from .android import host_abi, install_apk, require_debuggable
 
 logger = logging.getLogger("autowebcompat-repro")
 
@@ -34,6 +36,21 @@ def download_fenix(channel: AndroidChannel) -> Path:
     """Download the Fenix APK for a channel, matching the host architecture."""
     platform_name = f"android-{host_abi()}"
     destination = tempfile.mkdtemp(prefix=f"fenix-{channel}-", dir=Path.home())
+
+    apk_url = (
+        os.environ.get("ANDROID_FIREFOX_APK_URL") if channel == "nightly" else None
+    )
+    if apk_url:
+        apk = Path(destination) / "firefox-test.apk"
+        logger.info(
+            "downloading test Firefox APK for %s from %s", platform_name, apk_url
+        )
+        with requests.get(apk_url, stream=True, timeout=(30, 300)) as response:
+            response.raise_for_status()
+            with apk.open("wb") as output:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    output.write(chunk)
+        return apk
 
     if channel == "nightly":
         scraper_type = "daily"
@@ -63,6 +80,9 @@ def install_fenix(channel: AndroidChannel) -> str:
     apk.unlink(missing_ok=True)
 
     package = PACKAGE_NAMES[channel]
+    if channel == "nightly" and os.environ.get("ANDROID_FIREFOX_APK_URL"):
+        package = os.environ.get("ANDROID_FIREFOX_PACKAGE") or "org.mozilla.fenix.debug"
+    require_debuggable(package)
     logger.info("installed Fenix %s as %s", channel, package)
     return package
 

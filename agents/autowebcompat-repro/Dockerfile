@@ -25,7 +25,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/opt/venv/bin:$PATH"
 
-FROM base AS android-sdk
+FROM base AS agent
 
 # The agent needs Node.js + npm to run the DevTools MCP servers (npm packages;
 # the python base ships neither) and the shared libraries the browsers require
@@ -66,7 +66,9 @@ RUN apt-get update \
 ENV ANDROID_SDK_ROOT=/opt/android-sdk \
     ANDROID_HOME=/opt/android-sdk \
     ANDROID_AVD_HOME=/opt/android-sdk/.android/avd \
+    ANDROID_USER_HOME=/opt/android-sdk/.android \
     ANDROID_EMULATOR_HOME=/opt/android-sdk/.android \
+    ADB_VENDOR_KEYS=/opt/android-sdk/.android/adbkey \
     ANDROID_AVD_NAME=webcompat
 
 # Google publishes the emulator for linux-x86_64 only; there is no
@@ -75,7 +77,7 @@ ENV ANDROID_SDK_ROOT=/opt/android-sdk \
 # image stays correct if that ever changes.
 # API 34's Play Store image bundles Chrome 113. Its browser-level target
 # auto-attach protocol predates the tab hierarchy used by current Puppeteer.
-# Keep the donor and rootable test image on the same newer API level.
+# Use the Play Store image directly for its preinstalled mobile Chrome.
 ARG ANDROID_API=36
 ARG CMDLINE_TOOLS_VERSION=11076708
 ARG TARGETARCH
@@ -95,12 +97,7 @@ RUN set -eux; \
     rm /tmp/cmdline-tools.zip; \
     export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"; \
     yes | sdkmanager --licenses > /dev/null; \
-    # google_apis, not google_apis_playstore: playstore images are locked
-    # production builds where geckodriver cannot chown the Fenix profile it
-    # pushes ("fchown failed: Operation not permitted"). This matches what wpt
-    # uses to run Fenix on emulators (tools/wpt/android.py). Chrome is not
-    # preinstalled here, so the cross-check browser is sideloaded instead.
-    image="system-images;android-${ANDROID_API};google_apis;${abi}"; \
+    image="system-images;android-${ANDROID_API};google_apis_playstore;${abi}"; \
     sdkmanager --install "platform-tools" "emulator" \
         "platforms;android-${ANDROID_API}" "$image" > /dev/null; \
     # The data partition must be sized at creation: editing config.ini later
@@ -114,66 +111,15 @@ RUN set -eux; \
         >> "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd/config.ini"
 ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH"
 
-# Run this target with KVM to export mobile Chrome from a booted Play Store
-# image. The rootable google_apis AVD remains the browser test environment.
-FROM android-sdk AS chrome-donor
-
-ENV ANDROID_AVD_NAME=chrome-donor
-RUN set -eux; \
-    case "${TARGETARCH:-amd64}" in \
-        amd64) abi=x86_64 ;; \
-        arm64) abi=arm64-v8a ;; \
-    esac; \
-    image="system-images;android-${ANDROID_API};google_apis_playstore;${abi}"; \
-    "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "$image"; \
-    echo no | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager" create avd \
-        --force --name "$ANDROID_AVD_NAME" --package "$image" \
-        --path "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"
-
-COPY agents/autowebcompat-repro/hackbot_agents/autowebcompat_repro/android.py \
-    /app/donor/hackbot_agents/autowebcompat_repro/android.py
-COPY agents/autowebcompat-repro/extract_mobile_chrome.py /app/donor/
-WORKDIR /app/donor
-CMD ["python", "extract_mobile_chrome.py", "/tmp/mobile-chrome"]
-
-FROM android-sdk AS agent
-
-# Optional Chromium fallback. CI tests branded mobile Chrome using APKs
-# exported by chrome-donor and mounted at /opt/mobile-chrome instead.
-# Chromium lacks proprietary codecs (H.264/AAC) and Google API keys.
-#
-# AndroidDesktop_x64 is the x86_64 build (the plain `Android` and
-# `Android_Arm64` snapshots carry arm libs only). It is a single APK with no
-# splits and no TrichromeLibrary, so a plain `adb install` suffices.
-ENV CHROMIUM_APK=/opt/chromium/ChromePublic.apk
-
-RUN set -eux; \
-    case "${TARGETARCH:-amd64}" in \
-        amd64) platform=AndroidDesktop_x64 ;; \
-        arm64) platform=Android_Arm64 ;; \
-    esac; \
-    base="https://storage.googleapis.com/chromium-browser-snapshots"; \
-    rev="$(curl -fsSL "$base/$platform/LAST_CHANGE")"; \
-    echo "Chromium snapshot $platform r$rev"; \
-    case "$platform" in \
-        AndroidDesktop_x64) zip=chrome-android-desktop ;; \
-        *) zip=chrome-android ;; \
-    esac; \
-    curl -fsSL -o /tmp/chromium.zip "$base/$platform/$rev/${zip}.zip"; \
-    mkdir -p /opt/chromium; \
-    unzip -p /tmp/chromium.zip "${zip}/apks/ChromePublic.apk" \
-        > /opt/chromium/ChromePublic.apk; \
-    rm /tmp/chromium.zip; \
-    test -s /opt/chromium/ChromePublic.apk; \
-    ls -la /opt/chromium
-
 # Install the DevTools MCP servers and Puppeteer from the pinned
 # package.json/lockfile.
 COPY agents/autowebcompat-repro/package.json \
      agents/autowebcompat-repro/package-lock.json \
      agents/autowebcompat-repro/repro_reference.mjs \
+     agents/autowebcompat-repro/patch_firefox_mcp.py \
      /app/repro/
-RUN cd /app/repro && npm ci --omit=dev
+RUN cd /app/repro && npm ci --omit=dev \
+    && python patch_firefox_mcp.py node_modules/@mozilla/firefox-devtools-mcp-moz/dist.moz/index.js
 
 # hackbot.toml lives at the agent root (not inside the package), so copy it into
 # the working dir; the runtime discovers it there (cwd) at startup.

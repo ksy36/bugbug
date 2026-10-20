@@ -13,7 +13,6 @@ container.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -37,25 +36,18 @@ DEVICE_SERIAL = "emulator-5554"
 
 # A cold first boot in CI (software GPU, fresh userdata) is much slower
 # than a warm local boot with hardware acceleration.
-BOOT_TIMEOUT = 900
+BOOT_TIMEOUT = 300
 BOOT_POLL_INTERVAL = 5
 ADB_TIMEOUT = 120
+ADB_CONNECT_TIMEOUT = 120
+ADB_AUTH_TIMEOUT = 30
 
 # Chrome for Android publishes its DevTools endpoint on this abstract unix
 # socket; `adb forward` maps it to a host port the Chrome DevTools MCP attaches
 # to. See docs/debugging-android.md in chrome-devtools-mcp.
 CHROME_DEVTOOLS_PORT = 9222
-# Mobile Chrome's APK bundle is exported from a Play Store donor emulator.
-# Keep Chromium available for environments without a prepared bundle.
-CHROME_BROWSER = os.environ.get("ANDROID_CHROME", "chromium")
-CHROME_PACKAGE = (
-    "com.android.chrome" if CHROME_BROWSER == "mobile" else "org.chromium.chrome"
-)
-MOBILE_CHROME_APK_DIR = Path(
-    os.environ.get("MOBILE_CHROME_APK_DIR", "/opt/mobile-chrome")
-)
-
-CHROMIUM_APK = Path(os.environ.get("CHROMIUM_APK", "/opt/chromium/ChromePublic.apk"))
+CHROME_PACKAGE = "com.android.chrome"
+CHROME_SOCKET = "chrome_devtools_remote"
 
 
 class AndroidError(Exception):
@@ -101,6 +93,30 @@ def adb(*args: str, check: bool = True, timeout: int = ADB_TIMEOUT) -> str:
 
 def getprop(name: str) -> str:
     return adb("shell", "getprop", name, check=False).strip()
+
+
+def prepare_adb() -> None:
+    """Create the shared authentication key and start ADB before the emulator."""
+    binary = str(sdk_binary("platform-tools", "adb"))
+    # Docker sets this to the same .android directory used by the emulator.
+    # Generate per-container keys at runtime; never bake private keys into an
+    # image. Starting ADB first also makes its default user key available to
+    # the emulator before it injects trusted public keys into the guest.
+    key_name = os.environ.get("ADB_VENDOR_KEYS")
+    if key_name:
+        key = Path(key_name)
+        key.parent.mkdir(parents=True, exist_ok=True)
+        if not key.exists():
+            proc = subprocess.run(
+                [binary, "keygen", str(key)], capture_output=True, text=True, timeout=30
+            )
+            if proc.returncode:
+                raise AndroidError(f"ADB key generation failed: {proc.stderr.strip()}")
+    proc = subprocess.run(
+        [binary, "start-server"], capture_output=True, text=True, timeout=30
+    )
+    if proc.returncode:
+        raise AndroidError(f"ADB server failed to start: {proc.stderr.strip()}")
 
 
 def install_apk(apk: Path) -> None:
@@ -160,117 +176,54 @@ def start_app(package: str, url: str | None = None) -> None:
     raise AndroidError(f"{package} did not start within 60s")
 
 
-def install_chrome() -> None:
-    """Install the cross-check browser onto the emulator.
-
-    Select branded mobile Chrome with ANDROID_CHROME=mobile and supply the
-    donor's APK directory with MOBILE_CHROME_APK_DIR. Otherwise use Chromium.
-    """
-    if CHROME_BROWSER == "mobile":
-        install_mobile_chrome(MOBILE_CHROME_APK_DIR)
-    elif CHROME_BROWSER == "chromium":
-        if not CHROMIUM_APK.exists():
-            raise AndroidError(
-                f"No Chromium APK at {CHROMIUM_APK}; the image should download it "
-                "(see the Dockerfile)."
-            )
-        install_apk(CHROMIUM_APK)
-    else:
-        raise AndroidError(f"Unsupported ANDROID_CHROME: {CHROME_BROWSER!r}")
-
-    # The socket-name flag only names the server; it does not start it.
-    # DevTools starts after native browser initialization, so skip onboarding
-    # and open a tab rather than leaving the process on a first-run screen.
-    # The userdebug image allows reading flags from /data/local/tmp.
+def prepare_chrome() -> None:
+    """Configure the mobile Chrome preinstalled in the Play Store image."""
+    paths = adb("shell", "pm", "path", CHROME_PACKAGE)
+    if not any(line.startswith("package:") for line in paths.splitlines()):
+        raise AndroidError(
+            f"{CHROME_PACKAGE} is missing; use a google_apis_playstore image"
+        )
+    # A release image reads /data/local/tmp flags for the selected debug app.
+    # This setting does not require Chrome itself to be a debuggable APK.
+    adb("shell", "am", "set-debug-app", "--persistent", CHROME_PACKAGE)
     adb(
         "shell",
         "echo 'chrome --disable-fre --no-first-run --no-default-browser-check "
-        "--remote-debugging-socket-name="
-        f"{CHROME_PACKAGE}_devtools_remote' > /data/local/tmp/chrome-command-line",
+        f"--remote-debugging-socket-name={CHROME_SOCKET}' "
+        "> /data/local/tmp/chrome-command-line",
     )
     adb("shell", "chmod", "644", "/data/local/tmp/chrome-command-line")
-    # Installation may have started the app before the flags existed.
     adb("shell", "am", "force-stop", CHROME_PACKAGE)
+    details = adb("shell", "dumpsys", "package", CHROME_PACKAGE)
+    version = next(
+        (line.strip() for line in details.splitlines() if "versionName=" in line),
+        "unknown",
+    )
+    logger.info("preinstalled mobile Chrome: %s", version)
 
 
-def install_mobile_chrome(directory: Path) -> None:
-    """Install a donor bundle, with static libraries before Chrome's splits."""
-    manifest_path = directory / "manifest.json"
-    if not manifest_path.is_file():
+def require_debuggable(package: str) -> None:
+    """Check that geckodriver can manage app-private storage without root."""
+    try:
+        output = adb("shell", "run-as", package, "id")
+    except AndroidError as exc:
         raise AndroidError(
-            f"No mobile Chrome manifest at {manifest_path}; run the chrome-donor "
-            "image and mount its exported APK directory here."
+            f"Firefox app storage requires a debuggable APK for {package}. "
+            "Supply ANDROID_FIREFOX_APK_URL and ANDROID_FIREFOX_PACKAGE for a "
+            f"debuggable build matching the emulator ABI. run-as failed: {exc}"
+        ) from exc
+    if "uid=" not in output:
+        raise AndroidError(
+            f"run-as did not return an app identity for {package}: {output.strip()}"
         )
-    manifest = json.loads(manifest_path.read_text())
-    if manifest["abi"] != getprop("ro.product.cpu.abi"):
-        raise AndroidError("Mobile Chrome APKs do not match the emulator ABI")
-    if manifest["api"] != getprop("ro.build.version.sdk"):
-        raise AndroidError("Mobile Chrome donor and test Android API levels differ")
-    packages = manifest["packages"]
-    if not packages or packages[-1]["package"] != "com.android.chrome":
-        raise AndroidError("Mobile Chrome bundle must install com.android.chrome last")
-    # Validate the entire bundle before changing anything on the device.
-    for package in packages:
-        if not package["apks"]:
-            raise AndroidError(f"No APKs for {package['package']}")
-        for entry in package["apks"]:
-            apk = directory / entry["file"]
-            if apk.name.lower().endswith("-stub.apk"):
-                raise AndroidError(
-                    f"Mobile Chrome bundle contains a placeholder APK: {apk}"
-                )
-            if hashlib.sha256(apk.read_bytes()).hexdigest() != entry["sha256"]:
-                raise AndroidError(f"Mobile Chrome APK checksum mismatch: {apk}")
-    logger.info("installing mobile Chrome from %s", manifest["fingerprint"])
-    for package in packages:
-        apks = [str(directory / entry["file"]) for entry in package["apks"]]
-        command = "install-multiple" if len(apks) > 1 else "install"
-        output = adb(command, "-r", *apks, timeout=600)
-        if "Success" not in output:
-            raise AndroidError(
-                f"Installing {package['package']} failed: {output.strip()}"
-            )
-    details = adb("shell", "dumpsys", "package", "com.android.chrome")
-    logger.info(
-        "installed mobile Chrome: %s",
-        "; ".join(
-            line.strip() for line in details.splitlines() if "versionName=" in line
-        ),
-    )
-
-
-def devtools_socket_name() -> str:
-    """Find Chromium's DevTools socket by asking the device.
-
-    The name depends on the build (Play Store Chrome uses a fixed
-    ``chrome_devtools_remote``; Chromium derives it from its package), so read
-    the open sockets rather than assume.
-    """
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        for line in adb("shell", "cat", "/proc/net/unix", check=False).splitlines():
-            if "devtools_remote" in line and "stetho" not in line:
-                return line.rsplit("@", 1)[-1].strip()
-        time.sleep(2)
-    raise AndroidError(
-        f"{CHROME_PACKAGE} opened no DevTools socket within 60s. Sockets seen: "
-        + repr(
-            [
-                line.rsplit("@", 1)[-1].strip()
-                for line in adb(
-                    "shell", "cat", "/proc/net/unix", check=False
-                ).splitlines()
-                if "@" in line
-            ][:20]
-        )
-    )
+    logger.info("Firefox app-storage preflight: %s", output.strip())
 
 
 def forward_chrome_devtools(port: int = CHROME_DEVTOOLS_PORT) -> str:
     """Expose Chrome's on-device DevTools socket on a host port."""
     # Preserve geckodriver's forwards when both browsers share the device.
     adb("forward", "--remove", f"tcp:{port}", check=False)
-    adb("forward", f"tcp:{port}", f"localabstract:{devtools_socket_name()}")
+    adb("forward", f"tcp:{port}", f"localabstract:{CHROME_SOCKET}")
     # A forward can succeed before the HTTP server is ready. Discover the
     # browser websocket from CDP rather than guessing its path.
     deadline = time.monotonic() + 60
@@ -300,15 +253,14 @@ class Emulator:
         self,
         avd_name: str = AVD_NAME,
         *,
-        root: bool = True,
         log_path: Path | None = None,
     ) -> None:
         self.avd_name = avd_name
-        self.root = root
         self.log_path = log_path
         self.process: subprocess.Popen | None = None
 
     def start(self) -> Self:
+        prepare_adb()
         emulator = sdk_binary("emulator", "emulator")
         cmd = [
             str(emulator),
@@ -324,13 +276,6 @@ class Emulator:
             "-no-snapshot",
             "-gpu",
             "swiftshader_indirect",
-            # These match what wpt uses to run Fenix on emulators
-            # (tools/wpt/android.py): a permissive selinux and test_harness
-            # let geckodriver chown the Fenix profile it pushes to the device.
-            "-selinux",
-            "permissive",
-            "-prop",
-            "ro.test_harness=true",
             "-memory",
             "4096",
             "-camera-back",
@@ -348,30 +293,62 @@ class Emulator:
             self.process = subprocess.Popen(
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-        self.wait_for_boot()
+        try:
+            self.wait_for_boot()
+        except Exception:
+            if self.log_path is not None and self.log_path.is_file():
+                logger.error(
+                    "Emulator log tail:\n%s",
+                    self.log_path.read_text(errors="replace")[-4000:],
+                )
+            self.stop(force=True)
+            raise
         return self
 
     def wait_for_boot(self, timeout: int = BOOT_TIMEOUT) -> None:
         """Block until the device reports a completed boot."""
         deadline = time.monotonic() + timeout
+        unauthorized_since = None
         while time.monotonic() < deadline:
             if self.process is not None and self.process.poll() is not None:
                 raise AndroidError(
                     f"emulator exited with {self.process.returncode} before booting"
                 )
             waited = int(time.monotonic() - (deadline - timeout))
+            # get-state/getprop put authorization errors on stderr. Listing
+            # devices exposes the real transport state instead of reporting
+            # an empty stdout as if Android were still booting.
+            devices = adb("devices", "-l", timeout=10)
+            state = next(
+                (
+                    parts[1]
+                    for line in devices.splitlines()
+                    if len(parts := line.split()) >= 2 and parts[0] == DEVICE_SERIAL
+                ),
+                "not connected",
+            )
+            if state == "unauthorized":
+                if unauthorized_since is None:
+                    unauthorized_since = time.monotonic()
+                if time.monotonic() - unauthorized_since >= ADB_AUTH_TIMEOUT:
+                    raise AndroidError(
+                        f"{DEVICE_SERIAL}: ADB device unauthorized for {ADB_AUTH_TIMEOUT}s; "
+                        "the emulator and ADB server must use the same authentication key "
+                        "(ANDROID_USER_HOME / ADB_VENDOR_KEYS)."
+                    )
+            else:
+                unauthorized_since = None
+            if state == "not connected" and waited >= ADB_CONNECT_TIMEOUT:
+                raise AndroidError(
+                    f"{DEVICE_SERIAL} did not connect to ADB within {ADB_CONNECT_TIMEOUT}s"
+                )
             if waited and waited % 60 < BOOT_POLL_INTERVAL:
                 logger.info(
                     "waiting for boot (%ss): state=%r",
                     waited,
-                    adb("get-state", check=False).strip(),
+                    state,
                 )
-            if getprop("sys.boot_completed") == "1":
-                # google_apis images are rootable; geckodriver needs this to
-                # chown the profile it pushes into the Fenix data dir.
-                if self.root:
-                    adb("root", check=False, timeout=30)
-                    adb("wait-for-device", check=False)
+            if state == "device" and getprop("sys.boot_completed") == "1":
                 logger.info(
                     "emulator booted: Android %s, %s",
                     getprop("ro.build.version.release"),
@@ -381,10 +358,14 @@ class Emulator:
             time.sleep(BOOT_POLL_INTERVAL)
         raise AndroidError(f"emulator did not boot within {timeout}s")
 
-    def stop(self) -> None:
+    def stop(self, *, force: bool = False) -> None:
         if self.process is None:
             return
-        adb("emu", "kill", check=False, timeout=30)
+        if force:
+            if self.process.poll() is None:
+                self.process.terminate()
+        else:
+            adb("emu", "kill", check=False, timeout=30)
         try:
             self.process.wait(timeout=30)
         except subprocess.TimeoutExpired:
@@ -393,6 +374,7 @@ class Emulator:
                 self.process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+                self.process.wait(timeout=10)
         self.process = None
 
     def __enter__(self) -> Self:

@@ -85,6 +85,9 @@ def build_android_firefox_devtools_server(
     headless flag, since the browser is installed on the device and has no
     visible window on the host either way.
 
+    The Docker image patches the pinned MCP's Android launcher to pass
+    --android-storage=app to geckodriver. This requires a debuggable APK.
+
     Args:
         package: Android package to drive, e.g. ``org.mozilla.fenix`` for
             Nightly or ``org.mozilla.firefox`` for release.

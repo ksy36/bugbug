@@ -2,6 +2,15 @@ name: android-emulator-smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      firefox_apk_url:
+        description: 'Optional debuggable x86_64 Fenix APK URL; empty uses Nightly'
+        type: string
+        default: ''
+      firefox_package:
+        description: 'Package name of the optional test APK'
+        type: string
+        default: 'org.mozilla.fenix.debug'
   # ponytail: also runs on push while iterating; drop once green.
   push:
     paths:
@@ -23,41 +32,27 @@ jobs:
       - name: Check KVM
         run: ls -l /dev/kvm
 
-      - name: Build mobile Chrome donor
-        run: |
-          docker build -f agents/autowebcompat-repro/Dockerfile \
-            --target chrome-donor -t awc-chrome-donor .
-
-      - name: Export mobile Chrome APKs
-        timeout-minutes: 20
-        run: |
-          docker run --name chrome-donor --device /dev/kvm awc-chrome-donor
-          docker cp chrome-donor:/tmp/mobile-chrome "$RUNNER_TEMP/mobile-chrome"
-
       - name: Build agent image
         run: |
           docker build -f agents/autowebcompat-repro/Dockerfile \
             --target agent -t awc-agent .
 
       - name: Drive both browsers via their MCP servers
+        env:
+          ANDROID_FIREFOX_APK_URL: ${{ inputs.firefox_apk_url }}
+          ANDROID_FIREFOX_PACKAGE: ${{ inputs.firefox_package }}
         run: |
           docker run --name android-smoke --device /dev/kvm \
             --group-add "$(getent group kvm | cut -d: -f3)" \
-            -e ANDROID_CHROME=mobile \
-            -v "$RUNNER_TEMP/mobile-chrome:/opt/mobile-chrome:ro" \
+            -e ANDROID_FIREFOX_APK_URL -e ANDROID_FIREFOX_PACKAGE \
             -v "$PWD/agents/autowebcompat-repro/smoke_android.py:/app/smoke_android.py:ro" \
             -w /app awc-agent python smoke_android.py
 
       - name: Collect Android diagnostics
         if: always()
         run: |
-          mkdir -p android-smoke-artifacts/donor
+          mkdir -p android-smoke-artifacts
           docker cp android-smoke:/tmp/android-smoke-artifacts/. android-smoke-artifacts/ || true
-          docker cp chrome-donor:/tmp/chrome-donor-artifacts/. android-smoke-artifacts/donor/ || true
-          if [ -f "$RUNNER_TEMP/mobile-chrome/manifest.json" ]; then
-            cp "$RUNNER_TEMP/mobile-chrome/manifest.json" android-smoke-artifacts/mobile-chrome-manifest.json
-            cp "$RUNNER_TEMP/mobile-chrome/chrome-package.txt" android-smoke-artifacts/
-          fi
 
       - name: Upload Android diagnostics
         if: always()

@@ -145,11 +145,7 @@ async def drive(label, config, expect_ua):
             raise RuntimeError(f"UA is not Android: {ua[:300]}")
         if URL not in ua:
             raise RuntimeError(f"Browser did not reach {URL}: {ua[:300]}")
-        if (
-            label == "chrome"
-            and android.CHROME_BROWSER == "mobile"
-            and "Mobile" not in ua
-        ):
+        if label == "chrome" and "Mobile" not in ua:
             raise RuntimeError(f"Chrome UA is not mobile: {ua[:300]}")
         print(f"[{label}] userAgent contains {expect_ua!r}")
     finally:
@@ -197,14 +193,11 @@ async def main():
         build_android_firefox_devtools_server,
     )
 
-    with android.Emulator():
-        # Diagnostics: the fchown failure geckodriver reports when pushing a
-        # Fenix profile depends on who adbd thinks we are and where we stage
-        # files, so record both before driving anything.
+    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    with android.Emulator(log_path=ARTIFACTS / "emulator.log"):
         print(
             f"[env] uid={os.getuid()} home={os.path.expanduser('~')} tmp={os.environ.get('TMPDIR', '/tmp')}"
         )
-        print(f"[env] adb root: {android.adb('root', check=False).strip()!r}")
         print(
             f"[env] debuggable: {android.getprop('ro.debuggable')!r} "
             f"build type: {android.getprop('ro.build.type')!r}"
@@ -224,7 +217,7 @@ async def main():
                     )
                     await drive(label, config, "Firefox")
                 else:
-                    android.install_chrome()
+                    android.prepare_chrome()
                     print(
                         f"[chrome] controlling Android package {android.CHROME_PACKAGE}"
                     )
