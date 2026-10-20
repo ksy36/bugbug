@@ -5,6 +5,7 @@
 """Checks that do not require an Android device or Docker."""
 
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -13,57 +14,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import smoke_android
-from hackbot_agents.autowebcompat_repro import android, android_browser
+from hackbot_agents.autowebcompat_repro import android
 from hackbot_agents.autowebcompat_repro.android_browser import nightly_source
-from patch_firefox_mcp import patch_android_storage
 
 
 class FenixSourceTests(unittest.TestCase):
-    def test_compiles_installed_app_before_returning_package(self):
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch.object(
-                android_browser, "download_fenix", return_value=Path(tmp) / "test.apk"
-            ),
-            patch.object(android_browser, "install_apk"),
-            patch.object(android_browser, "require_debuggable"),
-            patch.object(
-                android_browser,
-                "nightly_source",
-                return_value=("url", "org.example.debug"),
-            ),
-            patch.object(android_browser, "adb", return_value="Success\n") as adb,
-        ):
-            self.assertEqual(
-                android_browser.install_fenix("nightly"), "org.example.debug"
-            )
-        adb.assert_called_once_with(
-            "shell",
-            "cmd",
-            "package",
-            "compile",
-            "-m",
-            "speed",
-            "-f",
-            "org.example.debug",
-            timeout=300,
-        )
-
-    def test_compilation_failure_is_reported(self):
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch.object(
-                android_browser, "download_fenix", return_value=Path(tmp) / "test.apk"
-            ),
-            patch.object(android_browser, "install_apk"),
-            patch.object(android_browser, "require_debuggable"),
-            patch.object(
-                android_browser, "adb", return_value="Failure [dexopt failed]"
-            ),
-        ):
-            with self.assertRaisesRegex(android.AndroidError, "app compilation failed"):
-                android_browser.install_fenix("nightly")
-
     def test_default_is_official_debug_apk_for_emulator_architecture(self):
         with (
             patch.dict(
@@ -95,6 +50,72 @@ class FenixSourceTests(unittest.TestCase):
                 nightly_source(),
                 ("https://example.com/custom.apk", "org.example.firefox.debug"),
             )
+
+
+class FirefoxAttachTests(unittest.TestCase):
+    def test_launches_once_with_private_profile_and_forwards_both_protocols(self):
+        configs = []
+
+        def adb_result(*args, **kwargs):
+            if args[0] == "push":
+                configs.append(json.loads(Path(args[1]).read_text()))
+            return "Starting: Intent"
+
+        with (
+            patch.object(android, "require_debuggable"),
+            patch.object(android, "adb", side_effect=adb_result) as adb,
+            patch.object(android, "wait_for_firefox") as ready,
+        ):
+            android.prepare_firefox("org.mozilla.fenix.debug")
+        calls = [call.args for call in adb.call_args_list]
+        launches = [
+            args for args in calls if args[0] == "shell" and "am start" in args[1]
+        ]
+        self.assertEqual(len(launches), 1)
+        self.assertNotIn("-S", launches[0][1])
+        self.assertIn("--ez automationtest true", launches[0][1])
+        self.assertIn(("forward", "tcp:2829", "tcp:2829"), calls)
+        self.assertIn(("forward", "tcp:9223", "tcp:9223"), calls)
+        self.assertEqual(configs[0]["prefs"]["marionette.port"], 2829)
+        self.assertIn(
+            "/data/data/org.mozilla.fenix.debug/awc-profile", configs[0]["args"]
+        )
+        self.assertNotIn(("shell", "pm", "clear", "org.mozilla.fenix.debug"), calls)
+        ready.assert_called_once_with()
+
+    def test_waits_for_protocol_greeting_after_initial_connection_failure(self):
+        greeting = json.dumps(
+            {"applicationType": "gecko", "marionetteProtocol": 3}
+        ).encode()
+        connection = Mock()
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=False)
+        connection.makefile.return_value = io.BytesIO(
+            str(len(greeting)).encode() + b":" + greeting
+        )
+        with (
+            patch.object(
+                android.socket,
+                "create_connection",
+                side_effect=[ConnectionRefusedError(), connection],
+            ) as connect,
+            patch.object(android.time, "sleep"),
+        ):
+            android.wait_for_firefox()
+        self.assertEqual(connect.call_count, 2)
+
+    def test_readiness_failure_has_bounded_timeout(self):
+        with (
+            patch.object(
+                android.socket,
+                "create_connection",
+                side_effect=ConnectionRefusedError("not ready"),
+            ),
+            patch.object(android.time, "monotonic", side_effect=[0, 0, 121]),
+            patch.object(android.time, "sleep"),
+        ):
+            with self.assertRaisesRegex(android.AndroidError, "within 120s: not ready"):
+                android.wait_for_firefox()
 
 
 class LauncherTests(unittest.TestCase):
@@ -395,33 +416,3 @@ class LockedImageTests(unittest.TestCase):
                 android.AndroidError, "requires a debuggable APK"
             ):
                 android.require_debuggable("org.mozilla.fenix")
-
-
-class FirefoxMcpPatchTests(unittest.TestCase):
-    def test_changes_android_launcher_only(self):
-        source = (
-            "if (isAndroid) {\n"
-            "          const serviceBuilder = new firefox.ServiceBuilder(geckodriverPath);\n"
-            "          this.driver = firefox.Driver.createSession(caps, serviceBuilder.build());\n"
-            "        } else if (this.options.connectExisting) {\n"
-            "          const serviceBuilder = new firefox.ServiceBuilder(geckodriverPath);\n"
-            '          serviceBuilder.addArguments("--connect-existing");\n'
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "index.js"
-            path.write_text(source)
-            patch_android_storage(path)
-            patched = path.read_text()
-        android_source, desktop_source = patched.split("} else if")
-        self.assertIn(
-            '.addArguments("--android-storage=app", "--log", "trace")', android_source
-        )
-        self.assertIn('.setStdio(["ignore", 2, 2])', android_source)
-        self.assertNotIn("--android-storage", desktop_source)
-
-    def test_unknown_package_layout_fails_build(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "index.js"
-            path.write_text("changed upstream package")
-            with self.assertRaisesRegex(RuntimeError, "Android launcher changed"):
-                patch_android_storage(path)

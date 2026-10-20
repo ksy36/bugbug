@@ -116,10 +116,8 @@ ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH"
 COPY agents/autowebcompat-repro/package.json \
      agents/autowebcompat-repro/package-lock.json \
      agents/autowebcompat-repro/repro_reference.mjs \
-     agents/autowebcompat-repro/patch_firefox_mcp.py \
      /app/repro/
-RUN cd /app/repro && npm ci --omit=dev \
-    && python patch_firefox_mcp.py node_modules/@mozilla/firefox-devtools-mcp-moz/dist.moz/index.js
+RUN cd /app/repro && npm ci --omit=dev
 
 # hackbot.toml lives at the agent root (not inside the package), so copy it into
 # the working dir; the runtime discovers it there (cwd) at startup.

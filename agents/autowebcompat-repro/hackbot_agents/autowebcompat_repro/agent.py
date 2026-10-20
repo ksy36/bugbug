@@ -554,7 +554,7 @@ class AndroidBugReproduction(Task):
         )
         self.add_mcp_server(
             "firefox-devtools",
-            build_android_firefox_devtools_server(package, android.DEVICE_SERIAL),
+            build_android_firefox_devtools_server(),
             ANDROID_DEVTOOLS_TOOLS,
         )
         self.add_mcp_server(
@@ -649,7 +649,7 @@ class AndroidStepsReproduction(Task):
         self.steps = steps
         self.add_mcp_server(
             "firefox-devtools",
-            build_android_firefox_devtools_server(package, android.DEVICE_SERIAL),
+            build_android_firefox_devtools_server(),
             ANDROID_DEVTOOLS_TOOLS,
         )
 
@@ -948,9 +948,7 @@ async def run_android_repro(
             channel: FirefoxChannel, android_channel: str
         ) -> None:
             package = browsers.package(android_channel)
-            # geckodriver's first launch of a not-yet-running Fenix fails with
-            # EAGAIN, so bring the app up before handing it the device.
-            android.start_app(package)
+            android.prepare_firefox(package)
 
             logger.info(
                 "Trying reproduction in Firefox for Android %s", android_channel

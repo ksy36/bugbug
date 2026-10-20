@@ -212,10 +212,8 @@ async def main():
                 print(f"[{label}] starting smoke test")
                 if label == "fenix":
                     package = install_fenix("nightly")
-                    android.start_app(package)
-                    config = build_android_firefox_devtools_server(
-                        package, android.DEVICE_SERIAL
-                    )
+                    android.prepare_firefox(package)
+                    config = build_android_firefox_devtools_server()
                     await drive(label, config, "Firefox")
                 else:
                     android.prepare_chrome()

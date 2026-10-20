@@ -72,36 +72,20 @@ def build_firefox_devtools_server(
 
 
 def build_android_firefox_devtools_server(
-    package: str,
-    device_serial: str,
     *,
     enable_script: bool = True,
 ) -> McpStdioServerConfig:
-    """Build the stdio config for the Firefox DevTools MCP in Android mode.
+    """Attach to Android Firefox launched by ``android.prepare_firefox``.
 
-    Android mode drives Fenix on a device over geckodriver and ADB, which
-    handles the host/device port forwarding itself. It accepts none of the
-    desktop launch options: there is no binary path, no profile template and no
-    headless flag, since the browser is installed on the device and has no
-    visible window on the host either way.
-
-    The Docker image patches the pinned MCP's Android launcher to pass
-    --android-storage=app to geckodriver. This requires a debuggable APK.
-
-    Args:
-        package: Android package to drive, e.g. ``org.mozilla.fenix`` for
-            Nightly or ``org.mozilla.firefox`` for release.
-        device_serial: ADB device serial, e.g. ``emulator-5554``.
-        enable_script: Expose the ``evaluate_script`` tool, which runs
-            arbitrary JS in the page context.
+    Forwarded Marionette and BiDi ports make the running Android browser
+    reachable through MCP's existing-instance mode. Omit Android launch
+    capabilities so geckodriver does not restart the app or manage its profile.
     """
-    args = ["--android-device", device_serial, "--android-package", package]
+    from .android import FIREFOX_MARIONETTE_PORT
+
+    args = ["--connect-existing", "--marionette-port", str(FIREFOX_MARIONETTE_PORT)]
     if enable_script:
         args.append("--enable-script")
-
-    # HOME must be writable: geckodriver stages the Fenix profile in a temp
-    # dir before pushing it to the device, and the agent user cannot write
-    # under a root-owned home.
     return McpStdioServerConfig(
         command=resolve_bin("firefox-devtools-mcp-moz"),
         args=args,

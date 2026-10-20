@@ -17,7 +17,10 @@ import json
 import logging
 import os
 import platform
+import shlex
+import socket
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Self
@@ -33,6 +36,8 @@ AVD_NAME = os.environ.get("ANDROID_AVD_NAME", "webcompat")
 # The emulator only ever has one device attached, but adb still wants to be
 # told which one when any ambiguity is possible.
 DEVICE_SERIAL = "emulator-5554"
+FIREFOX_MARIONETTE_PORT = 2829
+FIREFOX_BIDI_PORT = 9223
 
 # A cold first boot in CI (software GPU, fresh userdata) is much slower
 # than a warm local boot with hardware acceleration.
@@ -215,7 +220,7 @@ def prepare_chrome() -> None:
 
 
 def require_debuggable(package: str) -> None:
-    """Check that geckodriver can manage app-private storage without root."""
+    """Check that automation can manage app-private storage without root."""
     try:
         output = adb("shell", "run-as", package, "id")
     except AndroidError as exc:
@@ -229,6 +234,91 @@ def require_debuggable(package: str) -> None:
             f"run-as did not return an app identity for {package}: {output.strip()}"
         )
     logger.info("Firefox app-storage preflight: %s", output.strip())
+
+
+def prepare_firefox(package: str) -> None:
+    """Launch Fenix once and wait for Marionette before MCP attaches.
+
+    geckodriver's Android launcher has a five-second ADB read timeout and
+    force-stops the app on retry. Use the adb CLI and a separate readiness
+    check so a slow CI startup can finish without being interrupted.
+    """
+    require_debuggable(package)
+    adb("shell", "am", "force-stop", package)
+    profile = f"/data/data/{package}/awc-profile"
+    adb("shell", "run-as", package, "rm", "-rf", profile)
+    adb("shell", "run-as", package, "mkdir", "-p", profile)
+    config = {
+        "args": [
+            "--marionette",
+            "--profile",
+            profile,
+            "--remote-debugging-port",
+            str(FIREFOX_BIDI_PORT),
+            "--remote-allow-hosts",
+            "localhost,127.0.0.1",
+        ],
+        "prefs": {
+            "marionette.port": FIREFOX_MARIONETTE_PORT,
+            "remote.prefs.recommended": True,
+        },
+    }
+    # JSON is valid YAML; writing via adb push avoids shell quoting the config.
+    with tempfile.TemporaryDirectory(prefix="awc-firefox-") as tmp:
+        path = Path(tmp) / "geckoview-config.yaml"
+        path.write_text(json.dumps(config))
+        destination = f"/data/local/tmp/{package}-geckoview-config.yaml"
+        adb("push", str(path), destination)
+    adb("shell", "chmod", "644", destination)
+    adb("shell", "am", "set-debug-app", "--persistent", package)
+    for port in (FIREFOX_MARIONETTE_PORT, FIREFOX_BIDI_PORT):
+        adb("forward", f"tcp:{port}", f"tcp:{port}")
+    # Use the same entry point as geckodriver, including the automation extra.
+    component = shlex.quote(f"{package}/org.mozilla.fenix.IntentReceiverActivity")
+    output = adb(
+        "shell",
+        f"am start -n {component} -a android.intent.action.VIEW "
+        "-d about:blank --ez automationtest true",
+    )
+    if "Error:" in output or "Error type" in output:
+        raise AndroidError(f"Launching {package} failed: {output.strip()}")
+    wait_for_firefox()
+
+
+def wait_for_firefox(timeout: int = 120) -> None:
+    """Wait for a complete Marionette greeting, without creating a session."""
+    deadline = time.monotonic() + timeout
+    error = "no Marionette greeting"
+    while time.monotonic() < deadline:
+        try:
+            with (
+                socket.create_connection(
+                    ("127.0.0.1", FIREFOX_MARIONETTE_PORT), timeout=2
+                ) as connection,
+                connection.makefile("rb") as stream,
+            ):
+                prefix = bytearray()
+                while len(prefix) < 10:
+                    char = stream.read(1)
+                    if char == b":":
+                        break
+                    if not char or not char.isdigit():
+                        raise ValueError("invalid Marionette greeting length")
+                    prefix.extend(char)
+                length = int(prefix)
+                if not 0 < length <= 65536:
+                    raise ValueError("invalid Marionette greeting size")
+                greeting = json.loads(stream.read(length))
+                if greeting.get("applicationType") == "gecko":
+                    logger.info("Firefox Marionette is ready for MCP attachment")
+                    return
+                error = f"unexpected greeting: {greeting}"
+        except (OSError, ValueError) as exc:
+            error = str(exc)
+        time.sleep(1)
+    raise AndroidError(
+        f"Firefox Marionette did not become ready within {timeout}s: {error}"
+    )
 
 
 def forward_chrome_devtools(port: int = CHROME_DEVTOOLS_PORT) -> str:

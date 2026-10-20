@@ -3,7 +3,7 @@
 The Android counterpart to ``browser.py``: where that downloads a desktop
 Firefox and unpacks it with mozinstall, this downloads an APK and installs it
 onto the emulator with adb. The Nightly test slot uses Mozilla CI's debuggable
-Fenix APK so geckodriver can use app-private storage on a locked device.
+Fenix APK so automation can create an app-private profile on a locked device.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from .android import AndroidError, adb, host_abi, install_apk, require_debuggable
+from .android import host_abi, install_apk, require_debuggable
 
 logger = logging.getLogger("autowebcompat-repro")
 
@@ -84,22 +84,6 @@ def install_fenix(channel: AndroidChannel) -> str:
     if channel == "nightly":
         _, package = nightly_source()
     require_debuggable(package)
-    # Debug APKs otherwise verify/JIT code during geckodriver's short ADB
-    # launch window. Compiled code survives its subsequent `pm clear`.
-    logger.info("compiling Firefox app code before automation: %s", package)
-    result = adb(
-        "shell",
-        "cmd",
-        "package",
-        "compile",
-        "-m",
-        "speed",
-        "-f",
-        package,
-        timeout=300,
-    )
-    if "Success" not in result:
-        raise AndroidError(f"Firefox app compilation failed for {package}: {result}")
     logger.info("installed Fenix %s as %s", channel, package)
     return package
 
