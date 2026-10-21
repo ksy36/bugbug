@@ -1,7 +1,8 @@
 """Smoke test: can both DevTools MCPs actually drive their browser on the emulator?
 
 Boots the emulator, installs Fenix, then speaks MCP stdio to each server and
-checks navigate + snapshot + userAgent round-trip. Exits non-zero on failure.
+checks navigation, snapshots, input, keyboard focus, scrolling and screenshots.
+Exits non-zero on failure.
 
 Run inside the agent image; see .github/workflows/android-emulator-smoke.yml.
 """
@@ -10,14 +11,171 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
+from urllib.parse import quote
 from urllib.request import urlopen
 
 from hackbot_agents.autowebcompat_repro import android
 
 URL = "https://example.com/"
 ARTIFACTS = Path("/tmp/android-smoke-artifacts")
+
+# Inspired by https://bugzilla.mozilla.org/show_bug.cgi?id=2015504.
+# Keep this offline so site changes and consent dialogs cannot mask MCP failures.
+INTERACTION_PAGE = """<!doctype html>
+<html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-visual">
+<title>Android MCP interactions</title>
+<style>
+  body { margin: 0; font: 18px sans-serif; }
+  main { min-height: 400vh; padding: 20px; background: linear-gradient(#def, #fed); }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 12px; background: white; }
+  input, button { font: inherit; padding: 8px; max-width: 65%; }
+</style>
+<main><h1>Android MCP interactions</h1><p>Scroll down and back with the keyboard open.</p></main>
+<footer>
+  <input id="prompt" aria-label="Smoke prompt" placeholder="Type here">
+  <button type="button" onclick="document.body.dataset.submitted = document.querySelector('#prompt').value">Check input</button>
+</footer></html>"""
+
+
+def snapshot_uid(snapshot, name):
+    """Find a named control in either MCP's accessibility snapshot."""
+    for line in snapshot.splitlines():
+        if f'"{name}"' in line:
+            match = re.search(r'\buid=["\']?([\w.:-]+)', line)
+            if match:
+                return match[1]
+    raise RuntimeError(f"Snapshot is missing control {name!r}: {snapshot[:500]}")
+
+
+async def check_interactions(label, proc):
+    """Exercise UID input tools and scroll with a focused, fixed input."""
+    request_id = 10
+
+    async def tool(name, **arguments):
+        nonlocal request_id
+        request_id += 1
+        return tool_text(
+            await mcp_call(
+                proc, "tools/call", {"name": name, "arguments": arguments}, request_id
+            )
+        )
+
+    async def evaluate(function, expected):
+        result = await tool("evaluate_script", function=function)
+        if expected not in result:
+            raise RuntimeError(f"Missing {expected!r} in script result: {result[:500]}")
+        return result
+
+    async def capture(stage):
+        path = ARTIFACTS / f"{label}-{stage}.png"
+        if label == "chrome":
+            await tool("take_screenshot", filePath=str(path), format="png")
+        else:
+            await tool("screenshot_page", saveTo=str(path))
+        with path.open("rb") as image:
+            if image.read(8) != b"\x89PNG\r\n\x1a\n" or path.stat().st_size <= 24:
+                raise RuntimeError(f"MCP did not save a valid PNG: {path}")
+        metrics = await tool(
+            "evaluate_script",
+            function="""() => ({
+            scrollY, innerHeight, focused: document.activeElement?.id,
+            viewport: { height: visualViewport.height, offsetTop: visualViewport.offsetTop },
+            input: document.querySelector('#prompt').getBoundingClientRect().toJSON()
+        })""",
+        )
+        (ARTIFACTS / f"{label}-{stage}-viewport.txt").write_text(metrics)
+
+    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    await tool(
+        "navigate_page", url="data:text/html;charset=utf-8," + quote(INTERACTION_PAGE)
+    )
+    await evaluate(
+        """() => {
+        window.awcInitialHeight = visualViewport.height;
+        return 'fixture-ready';
+    }""",
+        "fixture-ready",
+    )
+    await capture("before-focus")
+    snapshot = await tool("take_snapshot")
+    click = "click" if label == "chrome" else "click_by_uid"
+    fill = "fill" if label == "chrome" else "fill_by_uid"
+    await tool(click, uid=snapshot_uid(snapshot, "Smoke prompt"))
+    await evaluate(
+        """async () => {
+        for (let i = 0; i < 30; i++) {
+            if (document.activeElement?.id === 'prompt' &&
+                visualViewport.height < window.awcInitialHeight - 40) {
+                return 'keyboard-visible';
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        throw new Error('Focused input did not open keyboard: ' + JSON.stringify({
+            focused: document.activeElement?.id, before: window.awcInitialHeight,
+            after: visualViewport.height
+        }));
+    }""",
+        "keyboard-visible",
+    )
+    print(f"[{label}] input focus and keyboard: PASS")
+    snapshot = await tool("take_snapshot")
+    await tool(
+        fill, uid=snapshot_uid(snapshot, "Smoke prompt"), value="MCP mobile input"
+    )
+    await evaluate(
+        """() => {
+        if (document.querySelector('#prompt').value !== 'MCP mobile input') {
+            throw new Error('MCP fill did not update the input');
+        }
+        return 'input-filled';
+    }""",
+        "input-filled",
+    )
+    await capture("keyboard-open")
+
+    for direction, position, condition in (
+        ("down", "document.scrollingElement.scrollHeight", "scrollY > before + 100"),
+        ("up", "0", "before > 100 && scrollY <= 1"),
+    ):
+        await evaluate(
+            """async () => {
+            const before = scrollY;
+            window.scrollTo({top: POSITION, behavior: 'instant'});
+            for (let i = 0; i < 20; i++) {
+                if (CONDITION) {
+                    if (document.activeElement?.id !== 'prompt' ||
+                        visualViewport.height >= window.awcInitialHeight - 40) {
+                        throw new Error('Input focus or keyboard lost during scroll');
+                    }
+                    return 'scroll-DIRECTION-ok';
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            throw new Error('Scroll DIRECTION did not change scrollY: ' + scrollY);
+        }""".replace("POSITION", position)
+            .replace("CONDITION", condition)
+            .replace("DIRECTION", direction),
+            f"scroll-{direction}-ok",
+        )
+        await capture(f"scroll-{direction}")
+        print(f"[{label}] scroll {direction} with keyboard: PASS")
+
+    snapshot = await tool("take_snapshot")
+    await tool(click, uid=snapshot_uid(snapshot, "Check input"))
+    await evaluate(
+        """() => {
+        if (document.body.dataset.submitted !== 'MCP mobile input') {
+            throw new Error('MCP click did not trigger the button handler');
+        }
+        return 'button-clicked';
+    }""",
+        "button-clicked",
+    )
+    print(f"[{label}] fill, button click and screenshots: PASS")
 
 
 async def mcp_call(proc, method, params, req_id, timeout=180):
@@ -148,6 +306,7 @@ async def drive(label, config, expect_ua):
         if label == "chrome" and "Mobile" not in ua:
             raise RuntimeError(f"Chrome UA is not mobile: {ua[:300]}")
         print(f"[{label}] userAgent contains {expect_ua!r}")
+        await check_interactions(label, proc)
     finally:
         if proc.returncode is None:
             proc.terminate()
@@ -176,6 +335,7 @@ def diagnostics(label, package=None):
         "logcat": ("logcat", "-d"),
         "activities": ("shell", "dumpsys", "activity", "activities"),
         "sockets": ("shell", "cat", "/proc/net/unix"),
+        "input-method": ("shell", "dumpsys", "input_method"),
     }
     if label == "chrome":
         commands["flags"] = ("shell", "cat", "/data/local/tmp/chrome-command-line")
@@ -204,6 +364,11 @@ async def main():
 
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     with android.Emulator(log_path=ARTIFACTS / "emulator.log"):
+        # The AVD has a hardware keyboard; still show the Android soft keyboard
+        # so focus/scroll checks exercise the mobile viewport behavior.
+        android.adb(
+            "shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1"
+        )
         print(
             f"[env] debuggable: {android.getprop('ro.debuggable')!r} "
             f"build type: {android.getprop('ro.build.type')!r}"

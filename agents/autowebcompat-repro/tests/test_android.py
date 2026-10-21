@@ -7,6 +7,7 @@
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -329,6 +330,9 @@ class ChromeSmokeTests(unittest.IsolatedAsyncioTestCase):
                 smoke_android.asyncio, "create_subprocess_exec", return_value=proc
             ),
             patch.object(smoke_android, "mcp_call", call),
+            patch.object(
+                smoke_android, "check_interactions", new_callable=AsyncMock
+            ) as interactions,
             patch("builtins.print"),
         ):
             await smoke_android.drive(
@@ -339,6 +343,7 @@ class ChromeSmokeTests(unittest.IsolatedAsyncioTestCase):
             names, ["new_page", "navigate_page", "take_snapshot", "evaluate_script"]
         )
         proc.terminate.assert_called_once()
+        interactions.assert_awaited_once_with("chrome", proc)
 
     async def test_stops_when_tab_creation_fails(self):
         proc = SimpleNamespace(
@@ -370,6 +375,76 @@ class ChromeSmokeTests(unittest.IsolatedAsyncioTestCase):
                 )
         self.assertEqual(call.await_count, 2)
         proc.terminate.assert_called_once()
+
+
+class InteractionSmokeTests(unittest.IsolatedAsyncioTestCase):
+    async def run_checks(self, label, artifacts, scroll_result=None):
+        calls = []
+
+        async def mcp(proc, method, params, request_id):
+            name, arguments = params["name"], params["arguments"]
+            calls.append((name, arguments, request_id))
+            text = "OK"
+            if name == "take_snapshot":
+                text = 'uid=1_2 textbox "Smoke prompt"\nuid=1_3 button "Check input"'
+            elif name == "evaluate_script":
+                function = arguments["function"]
+                marker = re.search(r"return '([^']+)';", function)
+                text = marker[1] if marker else '{"viewport": {"height": 300}}'
+                if "window.scrollTo" in function and scroll_result is not None:
+                    text = scroll_result
+            elif name in ("take_screenshot", "screenshot_page"):
+                path = arguments.get("filePath", arguments.get("saveTo"))
+                Path(path).write_bytes(b"\x89PNG\r\n\x1a\n" + b"test screenshot data")
+            return {"result": {"content": [{"type": "text", "text": text}]}}
+
+        with (
+            patch.object(smoke_android, "ARTIFACTS", artifacts),
+            patch.object(smoke_android, "mcp_call", side_effect=mcp),
+            patch("builtins.print"),
+        ):
+            await smoke_android.check_interactions(label, object())
+        return calls
+
+    async def test_uses_each_mcp_input_tools_and_saves_scroll_evidence(self):
+        for label, click, fill, screenshot in (
+            ("chrome", "click", "fill", "take_screenshot"),
+            ("fenix", "click_by_uid", "fill_by_uid", "screenshot_page"),
+        ):
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                artifacts = Path(tmp)
+                calls = await self.run_checks(label, artifacts)
+                self.assertEqual(
+                    [args["uid"] for name, args, _ in calls if name == click],
+                    ["1_2", "1_3"],
+                )
+                self.assertEqual(
+                    [args for name, args, _ in calls if name == fill],
+                    [{"uid": "1_2", "value": "MCP mobile input"}],
+                )
+                self.assertEqual(sum(name == screenshot for name, _, _ in calls), 4)
+                self.assertTrue((artifacts / f"{label}-scroll-up.png").is_file())
+                self.assertTrue(
+                    (artifacts / f"{label}-scroll-down-viewport.txt").is_file()
+                )
+                ids = [request_id for _, _, request_id in calls]
+                self.assertEqual(len(ids), len(set(ids)))
+
+    async def test_scroll_cannot_pass_without_confirming_movement(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(RuntimeError, "scroll-down-ok"):
+                await self.run_checks(
+                    "fenix", Path(tmp), scroll_result="page did not move"
+                )
+
+    def test_uid_parser_accepts_both_snapshot_formats_and_rejects_missing_input(self):
+        for snapshot in (
+            'uid=3_7 textbox "Smoke prompt"',
+            'uid="node-9" role="textbox" name="Smoke prompt"',
+        ):
+            self.assertTrue(smoke_android.snapshot_uid(snapshot, "Smoke prompt"))
+        with self.assertRaisesRegex(RuntimeError, "missing control"):
+            smoke_android.snapshot_uid('uid=1 heading "Other page"', "Smoke prompt")
 
 
 class ChromeForwardTests(unittest.TestCase):
