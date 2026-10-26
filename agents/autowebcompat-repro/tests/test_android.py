@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import smoke_android
 from hackbot_agents.autowebcompat_repro import android, android_browser
-from hackbot_agents.autowebcompat_repro.android_browser import nightly_source
+from hackbot_agents.autowebcompat_repro.android_browser import channel_source
 
 
 class FenixSourceTests(unittest.TestCase):
@@ -31,7 +31,7 @@ class FenixSourceTests(unittest.TestCase):
                 return_value="x86_64",
             ),
         ):
-            url, package = nightly_source()
+            url, package = channel_source("nightly")
         self.assertEqual(
             url,
             "https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/"
@@ -48,7 +48,7 @@ class FenixSourceTests(unittest.TestCase):
             },
         ):
             self.assertEqual(
-                nightly_source(),
+                channel_source("nightly"),
                 ("https://example.com/custom.apk", "org.example.firefox.debug"),
             )
 
@@ -72,7 +72,7 @@ class FenixInstallTests(unittest.TestCase):
                     patch.object(android_browser, "install_apk", side_effect=failure),
                     patch.object(
                         android_browser,
-                        "nightly_source",
+                        "channel_source",
                         return_value=("url", "org.example.debug"),
                     ),
                 ):
@@ -527,3 +527,30 @@ class LockedImageTests(unittest.TestCase):
                 android.AndroidError, "requires a debuggable APK"
             ):
                 android.require_debuggable("org.mozilla.fenix")
+
+
+class AndroidBrowsersTests(unittest.TestCase):
+    def test_switching_channel_reinstalls_shared_package(self):
+        from hackbot_agents.autowebcompat_repro import android_browser
+
+        with patch.object(
+            android_browser, "install_fenix", return_value="org.mozilla.fenix.debug"
+        ) as install:
+            browsers = android_browser.AndroidBrowsers()
+            browsers.package("nightly")
+            browsers.package("nightly")
+            browsers.package("release")
+        # Same channel is cached; a different channel reinstalls, because both
+        # share one package name and the second replaces the first.
+        self.assertEqual(
+            [c.args[0] for c in install.call_args_list], ["nightly", "release"]
+        )
+
+    def test_release_uses_debuggable_release_branch_build(self):
+        from hackbot_agents.autowebcompat_repro import android_browser
+
+        url, package = android_browser.channel_source("release")
+        self.assertIn("gecko.v2.mozilla-release.latest.mobile.fenix-debug", url)
+        # run-as, and so the app-private profile, needs a debuggable build; a
+        # release-signed org.mozilla.firefox would fail require_debuggable.
+        self.assertEqual(package, android_browser.DEBUG_PACKAGE)

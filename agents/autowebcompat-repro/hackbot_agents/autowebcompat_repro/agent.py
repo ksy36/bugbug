@@ -1032,14 +1032,18 @@ async def run_autowebcompat_repro(
                     screenshots_dir,
                 )
             except android.AndroidError:
-                logger.exception("Android emulator setup failed")
-                result = repro_results.into_result()
-                result.summary = (
-                    "Issue was identified as Android only but the Android "
-                    "environment could not be prepared"
-                )
-                result.failure_reason = "unsupported_android"
-                return result
+                logger.exception("Android reproduction failed")
+                # Only report an environment failure if nothing reproduced:
+                # a later pass (e.g. the release channel) failing must not
+                # discard a reproduction an earlier pass already established.
+                if not repro_results.reproduced:
+                    result = repro_results.into_result()
+                    result.summary = (
+                        "Issue was identified as Android only but the Android "
+                        "environment could not be prepared"
+                    )
+                    result.failure_reason = "unsupported_android"
+                    return result
 
             result = repro_results.into_result()
             if repro_results.reproduced and repro_results.chrome_reproduced:

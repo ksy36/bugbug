@@ -87,7 +87,8 @@ RUN set -eux; \
         *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"; \
-    curl -fsSL -o /tmp/cmdline-tools.zip \
+    curl -fsSL --retry 5 --retry-delay 5 --retry-max-time 600 \
+        --connect-timeout 30 --max-time 300 -o /tmp/cmdline-tools.zip \
         "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"; \
     unzip -q /tmp/cmdline-tools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"; \
     mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" \
