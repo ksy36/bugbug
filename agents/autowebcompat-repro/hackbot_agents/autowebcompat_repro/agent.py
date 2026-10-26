@@ -39,6 +39,7 @@ from .config import (
     DEVTOOLS_TOOLS,
 )
 from .mcp_servers import (
+    build_android_browser_server,
     build_android_chrome_devtools_server,
     build_android_firefox_devtools_server,
     build_chrome_devtools_server,
@@ -111,6 +112,7 @@ class TaskConfig:
         | None
     ) = None
     log: Path | None = None
+    artifacts_dir: Path | None = None
     verbose: bool = True
     headless: bool = False
 
@@ -541,7 +543,6 @@ class AndroidBugReproduction(Task):
         self,
         task_config: TaskConfig,
         run_tracker: RunTracker,
-        chrome_ws_endpoint: str,
         input_data: AutoWebcompatInput,
         bugzilla_mcp_server: McpServerConfig,
         screenshot_dir: Path,
@@ -558,8 +559,17 @@ class AndroidBugReproduction(Task):
         )
         self.add_mcp_server(
             "chrome-devtools",
-            build_android_chrome_devtools_server(chrome_ws_endpoint),
+            build_android_chrome_devtools_server(
+                log_path=(task_config.artifacts_dir or screenshot_dir)
+                / "android"
+                / "chrome-mcp.log",
+            ),
             CHROME_DEVTOOLS_TOOLS,
+        )
+        self.add_mcp_server(
+            "android-browser",
+            build_android_browser_server(),
+            ["mcp__android-browser__start_chrome"],
         )
         if self.input_data.type == "bug_id":
             self.add_mcp_server("bugzilla", bugzilla_mcp_server, BUGZILLA_READ_TOOLS)
@@ -587,11 +597,26 @@ their mobile layout.
      Report `reproduced` as false with the appropriate `failure_reason`. A
      testcase may inform your analysis, but reproducing on it does not count
      as reproducing the reported site issue.
-3. Cross-check in Chrome for Android: run the same steps with the Chrome
-   DevTools MCP, which is attached to Chrome on the same emulator, and report
-   `chrome_reproduced`.
+3. If the issue reproduces AND the breakage is visual in nature (incorrect
+   layout or rendering, not broken interaction), capture a screenshot in Firefox
+   before starting Chrome: call `screenshot_page` with `saveTo` set to
+   `{self.screenshot_path}`. This writes the image to that file instead of
+   returning it — do not capture or paste the image data yourself. Then set
+   `screenshot_path` in your result to exactly `{self.screenshot_path}`. For
+   non-visual issues, take no screenshot and leave `screenshot_path` null.
+4. Cross-check in Chrome for Android on the same emulator:
+   - Chrome has not been started yet. Immediately before using Chrome DevTools,
+     call `mcp__android-browser__start_chrome` and wait for it to report that
+     DevTools is ready. Then run the same steps and report `chrome_reproduced`.
    - Start with `new_page` at the affected URL to create and select a tab.
      `navigate_page` requires an already selected page.
+   - If Chrome reports a disconnected target, socket hang up, or connection
+     failure, call `mcp__android-browser__start_chrome` once to restart it,
+     then use `new_page` to repeat the cross-check. Old page IDs and snapshot
+     UIDs are invalid after a restart. If the connection remains unavailable,
+     report `chrome_reproduced` as null and explain that the cross-check was
+     blocked by a browser connection failure. Do not keep retrying the same
+     failure or repeatedly restart Chrome.
    - A genuine web-compat issue reproduces in Firefox but not in Chrome. If the
      behavior is identical in both, your steps may be wrong; refine the steps
      and re-check before concluding.
@@ -602,16 +627,9 @@ their mobile layout.
      user-agent-based block) are considered valid web compatibility issues even
      if the same message displayed in Chrome. Seeing that message in Firefox
      is the reproduction: set `reproduced` to true.
-4. Leave `script_path` null and `confirmed_by_script` false: the Puppeteer
+5. Leave `script_path` null and `confirmed_by_script` false: the Puppeteer
    confirmation script is not available on Android. Judge the reproduction on
-   the evidence you gathered in steps 2 and 3.
-5. If the issue reproduces AND the breakage is visual in nature (incorrect
-   layout or rendering, not broken interaction), capture a screenshot in Firefox
-   showing it: call `screenshot_page` with `saveTo` set to
-   `{self.screenshot_path}`. This writes the image to that file instead of
-   returning it — do not capture or paste the image data yourself. Then set
-   `screenshot_path` in your result to exactly `{self.screenshot_path}`. For
-   non-visual issues, take no screenshot and leave `screenshot_path` null.
+   the evidence you gathered in steps 2 through 4.
 6. Submit your findings via `submit_result` (see "Reporting your result").
 """
             )
@@ -935,13 +953,10 @@ async def run_android_repro(
     a usable state; the caller turns that into ``unsupported_android``.
     """
     browsers = AndroidBrowsers()
+    diagnostics_dir = (default_config.artifacts_dir or screenshots_dir) / "android"
+    diagnostics_dir.mkdir(parents=True, exist_ok=True)
 
-    with android.Emulator():
-        # Chrome is preinstalled; its MCP attaches to a running browser.
-        android.prepare_chrome()
-        android.start_app(android.CHROME_PACKAGE, "about:blank")
-        chrome_ws_endpoint = android.forward_chrome_devtools()
-
+    with android.Emulator(log_path=diagnostics_dir / "emulator.log"):
         async def next_repro_task(
             channel: FirefoxChannel, android_channel: AndroidChannel
         ) -> None:
@@ -956,7 +971,6 @@ async def run_android_repro(
                 task: Task = AndroidBugReproduction(
                     default_config,
                     tracker,
-                    chrome_ws_endpoint,
                     input_data,
                     bugzilla_mcp_server,
                     screenshots_dir,
@@ -969,15 +983,19 @@ async def run_android_repro(
                 )
             repro_results.set_result(channel, None, await task.run())
 
-        await next_repro_task(FirefoxChannel.android_nightly, "nightly")
+        try:
+            await next_repro_task(FirefoxChannel.android_nightly, "nightly")
 
-        if repro_results.reproduced and repro_results.chrome_reproduced:
-            # Reproducing in both browsers means it isn't Firefox specific;
-            # a second Fenix build won't change that.
-            return
+            if repro_results.reproduced and repro_results.chrome_reproduced:
+                # Reproducing in both browsers means it isn't Firefox specific;
+                # a second Fenix build won't change that.
+                return
 
-        if "stable" in repro_results.plan_result.affects_channels:
-            await next_repro_task(FirefoxChannel.android_release, "release")
+            if "stable" in repro_results.plan_result.affects_channels:
+                await next_repro_task(FirefoxChannel.android_release, "release")
+        finally:
+            android.save_diagnostics(diagnostics_dir)
+            logger.info("Android diagnostics saved to %s", diagnostics_dir)
 
 
 async def run_autowebcompat_repro(

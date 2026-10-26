@@ -219,6 +219,13 @@ def require_debuggable(package: str) -> None:
     logger.info("Firefox app-storage preflight: %s", output.strip())
 
 
+def start_chrome() -> str:
+    """Start Chrome for the cross-check and return its ready DevTools endpoint."""
+    prepare_chrome()
+    start_app(CHROME_PACKAGE, "about:blank")
+    return forward_chrome_devtools()
+
+
 def prepare_firefox(package: str) -> None:
     """Launch Fenix once and wait for Marionette before MCP attaches.
 
@@ -331,6 +338,23 @@ def forward_chrome_devtools(port: int = CHROME_DEVTOOLS_PORT) -> str:
             error = str(exc)
         time.sleep(1)
     raise AndroidError(f"Chrome DevTools on port {port} did not become ready: {error}")
+
+
+def save_diagnostics(directory: Path) -> None:
+    """Preserve Android state before shutdown without masking the run result."""
+    commands = {
+        "logcat": ("logcat", "-d", "-b", "all"),
+        "activities": ("shell", "dumpsys", "activity", "activities"),
+        "sockets": ("shell", "cat", "/proc/net/unix"),
+        "chrome-pid": ("shell", "pidof", CHROME_PACKAGE),
+        "debug-app": ("shell", "settings", "get", "global", "debug_app"),
+        "forwards": ("forward", "--list"),
+    }
+    for name, args in commands.items():
+        try:
+            (directory / f"{name}.txt").write_text(adb(*args, check=False, timeout=10))
+        except Exception:
+            logger.warning("Could not save Android %s diagnostics", name, exc_info=True)
 
 
 class Emulator:

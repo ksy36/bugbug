@@ -66,6 +66,7 @@ async def main(ctx: HackbotContext) -> AutowebcompatResult:
             max_turns=inputs.max_turns,
             effort=inputs.effort,
             log=ctx.log_path,
+            artifacts_dir=ctx.run_artifacts_dir,
             verbose=True,
             headless=inputs.headless,
         ),
