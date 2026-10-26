@@ -253,7 +253,9 @@ def prepare_firefox(package: str) -> None:
         destination = f"/data/local/tmp/{package}-geckoview-config.yaml"
         adb("push", str(path), destination)
     adb("shell", "chmod", "644", destination)
-    adb("shell", "am", "set-debug-app", "--persistent", package)
+    # Debuggable Fenix reads this config without being the selected debug app.
+    # Leave that global setting on Chrome so it keeps reading its flags if
+    # Android restarts it while Firefox is running.
     for port in (FIREFOX_MARIONETTE_PORT, FIREFOX_BIDI_PORT):
         adb("forward", f"tcp:{port}", f"tcp:{port}")
     # Use the same entry point as geckodriver, including the automation extra.

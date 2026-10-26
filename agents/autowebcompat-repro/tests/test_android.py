@@ -118,6 +118,10 @@ class FirefoxAttachTests(unittest.TestCase):
             "/data/data/org.mozilla.fenix.debug/awc-profile", configs[0]["args"]
         )
         self.assertNotIn(("shell", "pm", "clear", "org.mozilla.fenix.debug"), calls)
+        self.assertFalse(
+            any(args[:3] == ("shell", "am", "set-debug-app") for args in calls),
+            "Firefox must preserve Chrome's debug-app setting across restarts",
+        )
         ready.assert_called_once_with()
 
     def test_waits_for_protocol_greeting_after_initial_connection_failure(self):
