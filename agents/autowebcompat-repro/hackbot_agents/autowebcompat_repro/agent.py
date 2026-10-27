@@ -10,6 +10,7 @@ import os
 import subprocess
 import tempfile
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -23,6 +24,11 @@ from autowebcompat_tools.task import Task as BaseTask
 from claude_agent_sdk import McpServerConfig
 from pydantic import BaseModel
 
+from .android_browser import AndroidBrowser, AndroidEnvironment
+from .android_mcp import (
+    build_android_chrome_devtools_server,
+    build_android_firefox_devtools_server,
+)
 from .browser import ChromeBrowsers, FirefoxBrowsers
 from .config import BUGZILLA_READ_TOOLS, CHROME_DEVTOOLS_TOOLS, DEVTOOLS_TOOLS
 from .mcp_servers import build_chrome_devtools_server, build_firefox_devtools_server
@@ -58,8 +64,17 @@ class AutowebcompatReproResult(BaseModel):
 class Task(BaseTask[ResultT]):
     result_server_name = RESULT_SERVER_NAME
 
+    def __init__(
+        self, task_config: TaskConfig, run_tracker: RunTracker, android: bool = False
+    ):
+        super().__init__(task_config, run_tracker)
+        self.android = android
+
     def system_prompt(self) -> str:
-        return (HERE / "prompts" / "system.md").read_text()
+        prompt = (HERE / "prompts" / "system.md").read_text()
+        if self.android:
+            prompt += (HERE / "prompts" / "android.md").read_text()
+        return prompt
 
 
 def run_confirmation_script(
@@ -178,14 +193,15 @@ class BugReproduction(Task):
         self,
         task_config: TaskConfig,
         run_tracker: RunTracker,
-        firefox_path: Path,
-        profile_path: Path,
+        firefox_path: Path | AndroidBrowser,
+        profile_path: Path | None,
         input_data: AutoWebcompatInput,
         bugzilla_mcp_server: McpServerConfig,
         screenshot_dir: Path,
-        chrome_path: Path,
+        chrome_path: Path | AndroidBrowser,
+        android: bool = False,
     ):
-        super().__init__(task_config, run_tracker)
+        super().__init__(task_config, run_tracker, android)
         self.input_data = input_data
         self.firefox_path = firefox_path
         self.chrome_path = chrome_path
@@ -195,7 +211,9 @@ class BugReproduction(Task):
         self.script_path = make_empty_temp_file(self.repro_dir, "reproduction=", ".mjs")
         self.add_mcp_server(
             "firefox-devtools",
-            build_firefox_devtools_server(
+            build_android_firefox_devtools_server(firefox_path)
+            if android
+            else build_firefox_devtools_server(
                 firefox_path=firefox_path,
                 headless=task_config.headless,
                 enable_script=True,
@@ -207,7 +225,9 @@ class BugReproduction(Task):
 
         self.add_mcp_server(
             "chrome-devtools",
-            build_chrome_devtools_server(
+            build_android_chrome_devtools_server(chrome_path)
+            if android
+            else build_chrome_devtools_server(
                 chrome_path=chrome_path, headless=task_config.headless
             ),
             CHROME_DEVTOOLS_TOOLS,
@@ -220,7 +240,7 @@ class BugReproduction(Task):
 
     def system_prompt(self) -> str:
         repro_reference = self.repro_dir / "repro_reference.mjs"
-        return (
+        prompt = (
             super()
             .system_prompt()
             .format(
@@ -274,6 +294,9 @@ class BugReproduction(Task):
 """
             )
         )
+        if self.android:
+            prompt += (HERE / "prompts" / "android_bug_reproduction.md").read_text()
+        return prompt
 
     def user_prompt(self) -> str:
         if isinstance(self.input_data, BugDataInput):
@@ -297,15 +320,18 @@ class StepsReproduction(Task):
         self,
         task_config: TaskConfig,
         run_tracker: RunTracker,
-        firefox_path: Path,
-        profile_path: Path,
+        firefox_path: Path | AndroidBrowser,
+        profile_path: Path | None,
         steps: str,
+        android: bool = False,
     ):
-        super().__init__(task_config, run_tracker)
+        super().__init__(task_config, run_tracker, android)
         self.steps = steps
         self.add_mcp_server(
             "firefox_devtools",
-            build_firefox_devtools_server(
+            build_android_firefox_devtools_server(firefox_path)
+            if android
+            else build_firefox_devtools_server(
                 firefox_path=firefox_path,
                 headless=task_config.headless,
                 enable_script=True,
@@ -343,15 +369,22 @@ class ChromeMaskReproduction(Task):
         self,
         task_config: TaskConfig,
         run_tracker: RunTracker,
-        firefox_path: Path,
-        profile_path: Path,
+        firefox_path: Path | AndroidBrowser,
+        profile_path: Path | None,
         steps: str,
+        android: bool = False,
     ) -> None:
-        super().__init__(task_config, run_tracker)
+        super().__init__(task_config, run_tracker, android)
         self.steps = steps
         self.add_mcp_server(
             "firefox_devtools",
-            build_firefox_devtools_server(
+            build_android_firefox_devtools_server(
+                firefox_path,
+                enable_privileged_context=True,
+                extensions=["chrome-mask"],
+            )
+            if android
+            else build_firefox_devtools_server(
                 firefox_path=firefox_path,
                 headless=task_config.headless,
                 enable_script=True,
@@ -548,7 +581,7 @@ async def run_autowebcompat_repro(
     Returns a :class:`AutowebcompatReproResult` on success; raises
     :class:`AgentError` if the agent ends in an error.
     """
-    with Environment() as env:
+    with Environment() as env, ExitStack() as resources:
         if not default_config.headless:
             env.start_xvfb()
 
@@ -572,13 +605,19 @@ async def run_autowebcompat_repro(
             result.failure_reason = "unsupported_ios"
             return result
 
+        android = test_plan_result.affects_platforms == ["android"]
+        if android:
+            firefox_browser, chrome_browser = resources.enter_context(
+                AndroidEnvironment()
+            )
+
         async def next_repro_task(
             channel: FirefoxChannel,
             extra: str | None = None,
             config: TaskConfig = default_config,
         ) -> None:
             browser = getattr(firefox_browser, channel.value)
-            profile = setup_profile(browser)
+            profile = None if android else setup_profile(browser)
             logger.info(
                 "Trying reproduction in %s%s",
                 channel,
@@ -596,6 +635,7 @@ async def run_autowebcompat_repro(
                     bugzilla_mcp_server,
                     screenshots_dir,
                     chrome_browser.stable,
+                    android,
                 )
             else:
                 if initial_repro.script_path is not None:
@@ -616,6 +656,7 @@ async def run_autowebcompat_repro(
                     browser,
                     profile,
                     initial_repro.steps,
+                    android,
                 )
             repro_results.set_result(channel, extra, await task.run())
 
@@ -637,14 +678,6 @@ async def run_autowebcompat_repro(
             result.failure_reason = "not_firefox_specific"
             return result
 
-        if not repro_results.reproduced and test_plan_result.affects_platforms == [
-            "android"
-        ]:
-            result = repro_results.into_result()
-            result.summary = "Issue was identified as Android only and didn't reproduce on desktop nightly"
-            result.failure_reason = "unsupported_android"
-            return result
-
         # If we don't think this is ESR only, try stable
         if (
             "stable" in test_plan_result.affects_channels
@@ -652,7 +685,9 @@ async def run_autowebcompat_repro(
         ):
             await next_repro_task(FirefoxChannel.stable)
 
-        if repro_results.reproduced or "esr" in test_plan_result.affects_channels:
+        if not android and (
+            repro_results.reproduced or "esr" in test_plan_result.affects_channels
+        ):
             # If we have any result try ESR as a possible regression baseline,
             # otherwise try ESR if we think it's affected
             await next_repro_task(FirefoxChannel.esr)
@@ -660,7 +695,9 @@ async def run_autowebcompat_repro(
         if repro_results.initial_repro is not None:
             channel = repro_results.initial_repro.channel
             browser = getattr(firefox_browser, channel.value)
-            profile = setup_profile(browser, extensions=["chrome-mask"])
+            profile = (
+                None if android else setup_profile(browser, extensions=["chrome-mask"])
+            )
 
             task = ChromeMaskReproduction(
                 default_config,
@@ -668,6 +705,7 @@ async def run_autowebcompat_repro(
                 browser,
                 profile,
                 repro_results.initial_repro.steps,
+                android,
             )
             repro_results.set_result(channel, "chrome-mask", await task.run())
 
