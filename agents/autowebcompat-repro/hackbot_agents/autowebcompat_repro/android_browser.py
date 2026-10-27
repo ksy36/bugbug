@@ -85,14 +85,15 @@ class AndroidBrowser:
                         f"http://127.0.0.1:{android.CHROME_DEVTOOLS_PORT}/json/version",
                         timeout=2,
                     ) as response:
-                        endpoint = json.load(response)["webSocketDebuggerUrl"]
+                        json.load(response)["webSocketDebuggerUrl"]
                     android.start_app(self.package)
-                    return {"browserWSEndpoint": endpoint}
+                    return
                 except OSError, ValueError, KeyError:
                     pass
             android.prepare_chrome()
             android.start_app(self.package, "about:blank")
-            return {"browserWSEndpoint": android.forward_chrome_devtools()}
+            android.forward_chrome_devtools()
+            return
 
         self.install()
         if (
@@ -100,7 +101,7 @@ class AndroidBrowser:
             and android.adb("shell", "pidof", self.package, check=False).strip()
         ):
             android.start_app(self.package)
-            return self.connection()
+            return
         android.adb("shell", "am", "force-stop", self.package)
         config = {
             "env": {"MOZ_REMOTE_ALLOW_SYSTEM_ACCESS": "1"},
@@ -144,13 +145,12 @@ class AndroidBrowser:
         if "Error:" in output or "Error type" in output:
             raise android.AndroidError(output)
         android.wait_for_firefox()
-        return self.connection()
 
-    def connection(self):
-        return {
-            "browserWSEndpoint": f"ws://127.0.0.1:{android.FIREFOX_BIDI_PORT}/session",
-            "protocol": "webDriverBiDi",
-        }
+    @property
+    def endpoint(self):
+        if self.browser == "chrome":
+            return f"http://127.0.0.1:{android.CHROME_DEVTOOLS_PORT}"
+        return f"ws://127.0.0.1:{android.FIREFOX_BIDI_PORT}/session"
 
 
 class AndroidFirefoxBrowsers:
