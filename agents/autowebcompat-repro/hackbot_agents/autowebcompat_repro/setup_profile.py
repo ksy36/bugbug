@@ -197,6 +197,11 @@ def setup_profile(firefox_path: Path, extensions: Sequence[str] = ()) -> Path:
     Raises ``RuntimeError`` if an extension does not end up registered and
     enabled in the profile.
     """
+    from .android_browser import AndroidBrowser, AndroidProfile
+
+    if isinstance(firefox_path, AndroidBrowser):
+        return AndroidProfile(tuple(extensions))
+
     parent = Path(tempfile.mkdtemp(prefix="ff-profile-"))
 
     if not extensions:

@@ -10,6 +10,7 @@ import os
 import subprocess
 import tempfile
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -23,6 +24,7 @@ from autowebcompat_tools.task import Task as BaseTask
 from claude_agent_sdk import McpServerConfig
 from pydantic import BaseModel
 
+from .android_browser import AndroidEnvironment, task_prompt
 from .browser import ChromeBrowsers, FirefoxBrowsers
 from .config import BUGZILLA_READ_TOOLS, CHROME_DEVTOOLS_TOOLS, DEVTOOLS_TOOLS
 from .mcp_servers import build_chrome_devtools_server, build_firefox_devtools_server
@@ -59,7 +61,7 @@ class Task(BaseTask[ResultT]):
     result_server_name = RESULT_SERVER_NAME
 
     def system_prompt(self) -> str:
-        return (HERE / "prompts" / "system.md").read_text()
+        return task_prompt((HERE / "prompts" / "system.md").read_text())
 
 
 def run_confirmation_script(
@@ -548,7 +550,7 @@ async def run_autowebcompat_repro(
     Returns a :class:`AutowebcompatReproResult` on success; raises
     :class:`AgentError` if the agent ends in an error.
     """
-    with Environment() as env:
+    with Environment() as env, ExitStack() as resources:
         if not default_config.headless:
             env.start_xvfb()
 
@@ -571,6 +573,12 @@ async def run_autowebcompat_repro(
             result.summary = "Issue was identified as iOS only"
             result.failure_reason = "unsupported_ios"
             return result
+
+        android = test_plan_result.affects_platforms == ["android"]
+        if android:
+            firefox_browser, chrome_browser = resources.enter_context(
+                AndroidEnvironment()
+            )
 
         async def next_repro_task(
             channel: FirefoxChannel,
@@ -637,14 +645,6 @@ async def run_autowebcompat_repro(
             result.failure_reason = "not_firefox_specific"
             return result
 
-        if not repro_results.reproduced and test_plan_result.affects_platforms == [
-            "android"
-        ]:
-            result = repro_results.into_result()
-            result.summary = "Issue was identified as Android only and didn't reproduce on desktop nightly"
-            result.failure_reason = "unsupported_android"
-            return result
-
         # If we don't think this is ESR only, try stable
         if (
             "stable" in test_plan_result.affects_channels
@@ -652,7 +652,9 @@ async def run_autowebcompat_repro(
         ):
             await next_repro_task(FirefoxChannel.stable)
 
-        if repro_results.reproduced or "esr" in test_plan_result.affects_channels:
+        if not android and (
+            repro_results.reproduced or "esr" in test_plan_result.affects_channels
+        ):
             # If we have any result try ESR as a possible regression baseline,
             # otherwise try ESR if we think it's affected
             await next_repro_task(FirefoxChannel.esr)

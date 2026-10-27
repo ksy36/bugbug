@@ -4,9 +4,14 @@ The MCP servers are npm packages pinned in ``package.json`` and installed into
 the image with ``npm ci`` (see the Dockerfile).
 """
 
+import json
+import sys
 from pathlib import Path
 
 from claude_agent_sdk.types import McpStdioServerConfig
+
+from .android import CHROME_DEVTOOLS_PORT, FIREFOX_MARIONETTE_PORT
+from .android_browser import AndroidBrowser, AndroidProfile
 
 
 def resolve_bin(bin_name: str) -> str:
@@ -48,6 +53,26 @@ def build_firefox_devtools_server(
             it into a fresh per-session profile, so the template is not
             mutated. When ``None`` the server uses a clean throwaway profile.
     """
+    if isinstance(firefox_path, AndroidBrowser):
+        args = ["--connect-existing", "--marionette-port", str(FIREFOX_MARIONETTE_PORT)]
+        if enable_script:
+            args.append("--enable-script")
+        if enable_privileged_context:
+            args.append("--enable-privileged-context")
+        extensions = (
+            profile_path.extensions if isinstance(profile_path, AndroidProfile) else ()
+        )
+        return McpStdioServerConfig(
+            command=sys.executable,
+            args=[
+                "-m",
+                "hackbot_agents.autowebcompat_repro.android_mcp",
+                str(firefox_path),
+                json.dumps(extensions),
+                resolve_bin("firefox-devtools-mcp-moz"),
+                *args,
+            ],
+        )
     args = []
     if headless:
         args.append("--headless")
@@ -86,6 +111,21 @@ def build_chrome_devtools_server(
             unprivileged user inside a container, where Chrome's setuid sandbox
             cannot initialize and the browser otherwise fails to launch.
     """
+    if isinstance(chrome_path, AndroidBrowser):
+        return McpStdioServerConfig(
+            command=sys.executable,
+            args=[
+                "-m",
+                "hackbot_agents.autowebcompat_repro.android_mcp",
+                str(chrome_path),
+                "[]",
+                resolve_bin("chrome-devtools-mcp"),
+                "--browserUrl",
+                f"http://127.0.0.1:{CHROME_DEVTOOLS_PORT}",
+                "--usageStatistics=false",
+                "--performanceCrux=false",
+            ],
+        )
     args = []
     if headless:
         args.append("--headless")

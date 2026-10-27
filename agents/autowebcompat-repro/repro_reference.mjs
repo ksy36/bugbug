@@ -29,6 +29,7 @@
 //   2 = no verdict because the browser or script failed
 
 import puppeteer from "puppeteer-core";
+import { execFileSync } from "node:child_process";
 
 const BROWSER = process.env.BROWSER ?? process.env.MOZREGRESSION_APP_NAME;
 if (BROWSER !== "firefox" && BROWSER !== "chrome") {
@@ -44,7 +45,13 @@ if (!BROWSER_BIN) {
 const TARGET = "https://example.com/";
 
 async function probe() {
-  const browser = await puppeteer.launch({
+  // Android identifiers connect to real browsers on the emulator; desktop and
+  // mozregression continue to launch their supplied executable normally.
+  const android = BROWSER_BIN.startsWith("android:");
+  const browser = android ? await puppeteer.connect(JSON.parse(execFileSync(
+    "python", ["-m", "hackbot_agents.autowebcompat_repro.android_browser", BROWSER_BIN],
+    { encoding: "utf8", timeout: 180000, stdio: ["ignore", "pipe", "inherit"] },
+  ))) : await puppeteer.launch({
     browser: BROWSER,
     executablePath: BROWSER_BIN,
     headless: process.env.HEADLESS ? true : false,
@@ -57,7 +64,8 @@ async function probe() {
   } catch (error) {
     return { error: String(error?.message ?? error) };
   } finally {
-    await browser.close();
+    if (android) await browser.disconnect();
+    else await browser.close();
   }
 }
 

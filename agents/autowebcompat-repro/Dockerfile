@@ -1,3 +1,5 @@
+FROM node:24-bookworm-slim AS node
+
 FROM python:3.14 AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -28,6 +30,12 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 FROM base AS agent
 
+# Puppeteer requires Node >=22.12; Debian's nodejs package can be older.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
 # The agent needs Node.js + npm to run the DevTools MCP servers (npm packages;
 # the python base ships neither) and the shared libraries the browsers require
 # to run headless. The browser binaries themselves are downloaded at agent
@@ -35,8 +43,6 @@ FROM base AS agent
 # for Testing via the Chrome-for-Testing JSON API (see browser.py).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        # Node.js, to run the Firefox and Chrome DevTools MCP servers.
-        nodejs npm \
         # Shared by both browsers.
         ca-certificates \
         # Firefox runtime deps.
@@ -79,6 +85,53 @@ USER agent
 COPY --from=builder /opt/venv /opt/venv
 
 CMD ["python", "-m", "hackbot_agents.autowebcompat_repro"]
+
+FROM agent AS android-agent
+
+USER root
+
+ARG TARGETARCH
+ARG ANDROID_API=36
+ARG CMDLINE_TOOLS_VERSION=11076708
+
+ENV ANDROID_SDK_ROOT=/opt/android-sdk \
+    ANDROID_HOME=/opt/android-sdk \
+    ANDROID_USER_HOME=/home/agent/.android \
+    ANDROID_AVD_HOME=/home/agent/.android/avd \
+    ANDROID_AVD_NAME=webcompat \
+    ADB_VENDOR_KEYS=/home/agent/.android/adbkey
+ENV PATH="/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:/opt/android-sdk/cmdline-tools/latest/bin:$PATH"
+
+# Google's Linux emulator requires an x86_64 Linux host with KVM. The Play
+# Store image supplies real mobile Chrome and does not allow adb root.
+RUN test "$TARGETARCH" = amd64 \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl unzip default-jre-headless libpulse0 libglu1-mesa \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"; \
+    curl --fail --location --retry 5 --retry-delay 5 --retry-max-time 300 \
+        --connect-timeout 30 --max-time 180 \
+        -o /tmp/cmdline-tools.zip \
+        "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"; \
+    unzip -q /tmp/cmdline-tools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"; \
+    mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"; \
+    rm /tmp/cmdline-tools.zip; \
+    yes | sdkmanager --licenses > /dev/null; \
+    image="system-images;android-${ANDROID_API};google_apis_playstore;x86_64"; \
+    sdkmanager --install "platform-tools" "emulator" "platforms;android-${ANDROID_API}" "$image"; \
+    mkdir -p "$ANDROID_AVD_HOME"; \
+    echo no | avdmanager create avd --force --name "$ANDROID_AVD_NAME" \
+        --package "$image" --path "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd"; \
+    printf 'disk.dataPartition.size=12G\nhw.ramSize=4096\nhw.keyboard=no\n' \
+        >> "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd/config.ini"; \
+    chown -R agent:agent "$ANDROID_USER_HOME" "$ANDROID_SDK_ROOT/emulator"
+
+COPY agents/autowebcompat-repro/android_smoke.py /app/repro/android_smoke.py
+
+USER agent
 
 FROM base AS broker
 
