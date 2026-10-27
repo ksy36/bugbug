@@ -1,0 +1,114 @@
+name: Autowebcompat Android smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, autowebcompat_android]
+    paths:
+      - .github/workflows/autowebcompat-android-smoke.yml
+      - agents/autowebcompat-repro/**
+      - libs/autowebcompat-tools/**
+      - libs/hackbot-runtime/**
+      - libs/agent-tools/**
+      - pyproject.toml
+      - uv.lock
+      - VERSION
+      - .dockerignore
+  pull_request:
+    paths:
+      - .github/workflows/autowebcompat-android-smoke.yml
+      - agents/autowebcompat-repro/**
+      - libs/autowebcompat-tools/**
+      - libs/hackbot-runtime/**
+      - libs/agent-tools/**
+      - pyproject.toml
+      - uv.lock
+      - VERSION
+      - .dockerignore
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check KVM and free space for the emulator image
+        run: |
+          test -c /dev/kvm
+          ls -l /dev/kvm
+          # The container supplies its own SDK; remove the runner's unused copy.
+          sudo rm -rf /usr/local/lib/android
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build Android agent
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agents/autowebcompat-repro/Dockerfile
+          target: android-agent
+          platforms: linux/amd64
+          load: true
+          tags: awc-android:smoke
+          cache-from: type=gha,scope=autowebcompat-android
+          cache-to: type=gha,scope=autowebcompat-android,mode=max,ignore-error=true
+
+      - name: Test Nightly and stable through MCP
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          for channel in nightly stable; do
+            output="$RUNNER_TEMP/android-smoke/$channel"
+            mkdir -p "$output"
+            # The image runs as UID 1000; allow it to write diagnostic artifacts.
+            chmod 777 "$output"
+            # Each channel gets a fresh emulator, app data, and debugging ports.
+            # Continue to stable even if Nightly fails, preserving a failing job.
+            if ! docker run --name "android-smoke-$channel" \
+              --device /dev/kvm --group-add "$(stat -c %g /dev/kvm)" \
+              --shm-size=2g --init \
+              --volume "$output:/artifacts" \
+              --env SMOKE_ARTIFACTS_DIR=/artifacts \
+              awc-android:smoke python /app/repro/android_smoke.py \
+              --channel "$channel" 2>&1 | tee "$output/smoke.log"; then
+              status=1
+            fi
+          done
+          exit "$status"
+
+      - name: Collect diagnostics and stop containers
+        if: always()
+        shell: bash
+        run: |
+          for channel in nightly stable; do
+            container="android-smoke-$channel"
+            if docker container inspect "$container" > /dev/null 2>&1; then
+              output="$RUNNER_TEMP/android-smoke/$channel"
+              mkdir -p "$output"
+              # Also collect the boot log if a timeout interrupted Python cleanup.
+              docker stop --time 10 "$container" || true
+              docker logs "$container" > "$output/container.log" 2>&1 || true
+              docker cp "$container:/tmp/android-emulator.log" "$output/emulator-final.log" || true
+              docker rm -f "$container" || true
+            fi
+          done
+
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autowebcompat-android-smoke
+          path: ${{ runner.temp }}/android-smoke/
+          if-no-files-found: warn
+          retention-days: 7

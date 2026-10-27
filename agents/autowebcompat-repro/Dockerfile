@@ -129,6 +129,8 @@ RUN set -eux; \
         >> "$ANDROID_AVD_HOME/${ANDROID_AVD_NAME}.avd/config.ini"; \
     chown -R agent:agent "$ANDROID_USER_HOME" "$ANDROID_SDK_ROOT/emulator"
 
+COPY agents/autowebcompat-repro/android_smoke.py /app/repro/android_smoke.py
+
 USER agent
 
 FROM base AS broker
