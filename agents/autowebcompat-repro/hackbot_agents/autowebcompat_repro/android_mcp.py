@@ -92,6 +92,8 @@ class AndroidTools:
             result = await self.session.call_tool(name, arguments)
             if name == "restart_firefox":
                 self.started = False
+                with contextlib.redirect_stdout(sys.stderr):
+                    await asyncio.to_thread(self.browser.start, force=True)
             return result
 
 

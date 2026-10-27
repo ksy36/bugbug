@@ -78,13 +78,18 @@ class Task(BaseTask[ResultT]):
 
 
 def run_confirmation_script(
-    script_path: Path, firefox_path: Path, headless: bool
+    script_path: Path,
+    firefox_path: Path | AndroidBrowser,
+    headless: bool,
+    android: bool = False,
 ) -> ReproductionResult | None:
     script_timeout = 5 * 60
+    if android:
+        firefox_path.start(force=True)
     env = {
         **os.environ,
         "BROWSER": "firefox",
-        "BROWSER_BIN": str(firefox_path),
+        "BROWSER_BIN": firefox_path.endpoint if android else str(firefox_path),
     }
     if headless:
         env["HEADLESS"] = "1"
@@ -203,8 +208,8 @@ class BugReproduction(Task):
     ):
         super().__init__(task_config, run_tracker, android)
         self.input_data = input_data
-        self.firefox_path = firefox_path
-        self.chrome_path = chrome_path
+        self.firefox_path = firefox_path.endpoint if android else firefox_path
+        self.chrome_path = chrome_path.endpoint if android else chrome_path
         self.screenshot_path = make_empty_temp_file(
             screenshot_dir, "reproduction=", ".png"
         )
@@ -220,7 +225,9 @@ class BugReproduction(Task):
                 enable_privileged_context=False,
                 profile_path=profile_path,
             ),
-            DEVTOOLS_TOOLS,
+            DEVTOOLS_TOOLS + ["mcp__firefox-devtools__restart_firefox"]
+            if android
+            else DEVTOOLS_TOOLS,
         )
 
         self.add_mcp_server(
@@ -640,7 +647,10 @@ async def run_autowebcompat_repro(
             else:
                 if initial_repro.script_path is not None:
                     script_result = run_confirmation_script(
-                        initial_repro.script_path, browser, default_config.headless
+                        initial_repro.script_path,
+                        browser,
+                        default_config.headless,
+                        android,
                     )
                     if script_result is not None:
                         repro_results.set_result(channel, extra, script_result)

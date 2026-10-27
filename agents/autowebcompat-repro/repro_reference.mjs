@@ -44,7 +44,12 @@ if (!BROWSER_BIN) {
 const TARGET = "https://example.com/";
 
 async function probe() {
-  const browser = await puppeteer.launch({
+  // Android identifiers connect to real browsers on the emulator; desktop and
+  // mozregression continue to launch their supplied executable normally.
+  const android = /^(ws|http):/.test(BROWSER_BIN);
+  const browser = android ? await puppeteer.connect(BROWSER === "firefox"
+    ? { browserWSEndpoint: BROWSER_BIN, protocol: "webDriverBiDi" }
+    : { browserURL: BROWSER_BIN }) : await puppeteer.launch({
     browser: BROWSER,
     executablePath: BROWSER_BIN,
     headless: process.env.HEADLESS ? true : false,
@@ -57,7 +62,8 @@ async function probe() {
   } catch (error) {
     return { error: String(error?.message ?? error) };
   } finally {
-    await browser.close();
+    if (android) await browser.disconnect();
+    else await browser.close();
   }
 }
 
