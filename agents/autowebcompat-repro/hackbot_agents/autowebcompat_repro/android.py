@@ -181,6 +181,25 @@ def prepare_chrome() -> None:
     logger.info("preinstalled mobile Chrome: %s", version)
 
 
+def stop_firefox_packages(packages, timeout: int = 10) -> None:
+    """Release shared debugging ports before starting another Firefox channel."""
+    packages = sorted(packages)
+    for package in packages:
+        adb("shell", "am", "force-stop", package)
+    deadline = time.monotonic() + timeout
+    while True:
+        running = [
+            package
+            for package in packages
+            if adb("shell", "pidof", package, check=False).strip()
+        ]
+        if not running:
+            return
+        if time.monotonic() >= deadline:
+            raise AndroidError(f"Firefox packages did not stop: {', '.join(running)}")
+        time.sleep(0.1)
+
+
 def wait_for_firefox(timeout: int = 120) -> None:
     """Wait for a complete Marionette greeting, without creating a session."""
     deadline = time.monotonic() + timeout

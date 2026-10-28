@@ -67,42 +67,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          status=0
-          for channel in nightly stable; do
-            output="$RUNNER_TEMP/android-smoke/$channel"
-            mkdir -p "$output"
-            # The image runs as UID 1000; allow it to write diagnostic artifacts.
-            chmod 777 "$output"
-            # Each channel gets a fresh emulator, app data, and debugging ports.
-            # Continue to stable even if Nightly fails, preserving a failing job.
-            if ! docker run --name "android-smoke-$channel" \
-              --device /dev/kvm --group-add "$(stat -c %g /dev/kvm)" \
-              --shm-size=2g --init \
-              --volume "$output:/artifacts" \
-              --env SMOKE_ARTIFACTS_DIR=/artifacts \
-              awc-android:smoke python /app/repro/android_smoke.py \
-              --channel "$channel" 2>&1 | tee "$output/smoke.log"; then
-              status=1
-            fi
-          done
-          exit "$status"
+          output="$RUNNER_TEMP/android-smoke"
+          mkdir -p "$output"
+          # The image runs as UID 1000; allow it to write diagnostic artifacts.
+          chmod 777 "$output"
+          # Test switching from Nightly to stable on the same emulator, as the
+          # reproduction agent does. The script verifies the installed version.
+          docker run --name android-smoke \
+            --device /dev/kvm --group-add "$(stat -c %g /dev/kvm)" \
+            --shm-size=2g --init \
+            --volume "$output:/artifacts" \
+            --env SMOKE_ARTIFACTS_DIR=/artifacts \
+            awc-android:smoke python /app/repro/android_smoke.py \
+            2>&1 | tee "$output/smoke.log"
 
       - name: Collect diagnostics and stop containers
         if: always()
         shell: bash
         run: |
-          for channel in nightly stable; do
-            container="android-smoke-$channel"
-            if docker container inspect "$container" > /dev/null 2>&1; then
-              output="$RUNNER_TEMP/android-smoke/$channel"
-              mkdir -p "$output"
-              # Also collect the boot log if a timeout interrupted Python cleanup.
-              docker stop --time 10 "$container" || true
-              docker logs "$container" > "$output/container.log" 2>&1 || true
-              docker cp "$container:/tmp/android-emulator.log" "$output/emulator-final.log" || true
-              docker rm -f "$container" || true
-            fi
-          done
+          if docker container inspect android-smoke > /dev/null 2>&1; then
+            output="$RUNNER_TEMP/android-smoke"
+            mkdir -p "$output"
+            # Also collect the boot log if a timeout interrupted Python cleanup.
+            docker stop --time 10 android-smoke || true
+            docker logs android-smoke > "$output/container.log" 2>&1 || true
+            docker cp android-smoke:/tmp/android-emulator.log "$output/emulator-final.log" || true
+            docker rm -f android-smoke || true
+          fi
 
       - name: Upload screenshots and logs
         if: always()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,13 +97,27 @@ class AndroidBrowser:
             return
 
         self.install()
-        if (
-            not force
-            and android.adb("shell", "pidof", self.package, check=False).strip()
-        ):
+        reuse = not force and bool(
+            android.adb("shell", "pidof", self.package, check=False).strip()
+        )
+        # Nightly and release use the same device ports. Stopping only the
+        # requested package lets a previous channel answer the new connection.
+        packages = set(PACKAGES.values()) | {self.package}
+        custom_package = os.environ.get("ANDROID_FIREFOX_PACKAGE")
+        if custom_package:
+            packages.add(custom_package)
+        if reuse:
+            packages.discard(self.package)
+        android.stop_firefox_packages(packages)
+        if reuse:
             android.start_app(self.package)
             return
-        android.adb("shell", "am", "force-stop", self.package)
+        logger.info(
+            "Starting Firefox %s: package=%s versionName=%s",
+            self.channel,
+            self.package,
+            self.version(),
+        )
         config = {
             "env": {"MOZ_REMOTE_ALLOW_SYSTEM_ACCESS": "1"},
             "args": [
@@ -145,6 +160,19 @@ class AndroidBrowser:
         if "Error:" in output or "Error type" in output:
             raise android.AndroidError(output)
         android.wait_for_firefox()
+        if not android.adb("shell", "pidof", self.package, check=False).strip():
+            raise android.AndroidError(
+                f"Firefox debugging endpoint became ready but {self.package} is not running"
+            )
+
+    def version(self):
+        details = android.adb("shell", "dumpsys", "package", self.package)
+        match = re.search(r"^\s*versionName=(\S+)", details, re.MULTILINE)
+        if not match:
+            raise android.AndroidError(
+                f"Cannot determine Firefox version for {self.package}"
+            )
+        return match[1]
 
     @property
     def endpoint(self):

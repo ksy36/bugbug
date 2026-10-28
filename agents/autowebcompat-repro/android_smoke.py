@@ -56,8 +56,9 @@ async def call(session, tool_name, **arguments):
 async def firefox(channel, mask=False):
     label = f"firefox-{channel}" + ("-chrome-mask" if mask else "")
     print(f"[{label}] starting", flush=True)
+    browser = AndroidBrowser("firefox", channel)
     config = build_android_firefox_devtools_server(
-        AndroidBrowser("firefox", channel),
+        browser,
         enable_privileged_context=mask,
         extensions=["chrome-mask"] if mask else [],
     )
@@ -89,6 +90,15 @@ async def firefox(channel, mask=False):
         expected = "Chrome" if mask else "Firefox"
         if expected not in ua or "Android" not in ua:
             raise RuntimeError(f"Expected Android {expected} user agent: {ua}")
+        if not mask:
+            version = browser.version()
+            expected_major = version.split(".")[0]
+            reported = re.search(r"Firefox/(\d+)", ua)
+            if not reported or reported[1] != expected_major:
+                raise RuntimeError(
+                    f"Requested {browser.package} {version}, but connected browser reported: {ua}"
+                )
+            print(f"[{label}] verified {browser.package} {version}", flush=True)
         await call(session, "take_snapshot")
         await call(session, "screenshot_page", saveTo=str(ARTIFACTS / f"{label}.png"))
     print(f"[{label}] PASS", flush=True)
