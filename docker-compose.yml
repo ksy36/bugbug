@@ -12,6 +12,7 @@ include:
   - path: agents/test-plan-generator/compose.yml
   - path: agents/uplift-resolve/compose.yml
   - path: agents/autowebcompat-intervention/compose.yml
+  - path: agents/autowebcompat-snapshot/compose.yml
 
 services:
   bugbug-base:

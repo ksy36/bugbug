@@ -1,0 +1,14 @@
+services:
+  autowebcompat-snapshot-agent:
+    build:
+      context: ../..
+      dockerfile: agents/autowebcompat-snapshot/Dockerfile
+    environment:
+      - BUG_IDS
+      - MODEL
+      - EFFORT
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?error}
+      # Snapshots land in ~/hackbot/artifacts/snapshots on the host.
+      - ARTIFACTS_DIR=/artifacts
+    volumes:
+      - ${HOME}/hackbot/artifacts:/artifacts
