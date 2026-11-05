@@ -49,14 +49,22 @@ async function probe() {
   const android = /^(ws|http):/.test(BROWSER_BIN);
   // A hung device browser should fail fast rather than after the 180s default.
   const connect = { defaultViewport: null, protocolTimeout: 30_000 };
-  const browser = android ? await puppeteer.connect(BROWSER === "firefox"
-    ? { ...connect, browserWSEndpoint: BROWSER_BIN, protocol: "webDriverBiDi" }
-    : { ...connect, browserURL: BROWSER_BIN }) : await puppeteer.launch({
-    browser: BROWSER,
-    executablePath: BROWSER_BIN,
-    headless: process.env.HEADLESS ? true : false,
-    ...(BROWSER === "chrome" ? { args: ["--no-sandbox"] } : {}),
-  });
+  const browser = android
+    ? await puppeteer.connect(
+        BROWSER === "firefox"
+          ? {
+              ...connect,
+              browserWSEndpoint: BROWSER_BIN,
+              protocol: "webDriverBiDi",
+            }
+          : { ...connect, browserURL: BROWSER_BIN }
+      )
+    : await puppeteer.launch({
+        browser: BROWSER,
+        executablePath: BROWSER_BIN,
+        headless: process.env.HEADLESS ? true : false,
+        ...(BROWSER === "chrome" ? { args: ["--no-sandbox"] } : {}),
+      });
   let page;
   try {
     page = await browser.newPage();
